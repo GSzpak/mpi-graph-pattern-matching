@@ -2,20 +2,29 @@
 #define GRAPH_H
 
 /**
+ * Data structure for sorting nodes by sum of degrees
+ */
+typedef struct {
+    int *outEdges;
+    int *inEdges;
+    int outDegree;
+    int inDegree;
+} Node;
+
+/**
  * Directed graph data structure.
  */
 typedef struct {
-    // For each node an array of outgoing edges
-    int **outEdges;
-    // For each node an array of outgoing edges
-    int **inEdges;
-    // Out-degrees for nodes or -1 if the node is not in the graph.
-    int *outDegrees;
-    // Out-degrees for nodes or -1 if the node is not in the graph.
-    int *inDegrees;
-    // Map numberOfNode -> numberOfProcess
-    int *procForNode;
     int numOfNodes;
+    // 1 if node is graph and 0 otherwise
+    int *nodesInGraph;
+    // array of nodes
+    // In worker - node i is under index i
+    // In root - used to sort nodes by (inDegree + outDegree)
+    // to distribute nodes possibly evenly
+    Node *nodes;
+    // Map node -> process
+    int *procForNode;
     // int maxNodeWithOutEdgesId;
 } Graph;
 
