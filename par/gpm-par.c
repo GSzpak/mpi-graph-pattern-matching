@@ -14,8 +14,7 @@
 
 
 static const int NUM_NODES_TAG = 49;
-static const int SEND_NODE_META_TAG = 50;
-static const int SEND_NODE_NEIGHBOURS_TAG = 51;
+static const int NODE_EDGES_TAG = 50;
 
 
 void prepareGraph(Graph *graph)
@@ -58,16 +57,17 @@ int nodeComparator(const void *elem1, const void *elem2)
     }
 }
 
-int getNodeSize(Graph *graph, int numOfNode)
+int getNodeSize(Node *node)
 {
-    Node *node = &graph->nodes[numOfNode];
     return (node->inDegree + node->outDegree + 2) * sizeof(int);
 }
 
 // Assigns nodes to processes evenly by (inDegree + outDegree)
-void prepareForDistribution(Graph *graph, int numOfProcs, int **numOfNodesForProc)
+void assignNodeToProc(Graph *graph, int numOfProcs, 
+    int **numOfNodesForProc)
 {
     int i, actNodeNum, actProc, forward, actSize;
+    Node *actNode;
     int remainingSpace[numOfProcs];
     *numOfNodesForProc = (int *) malloc(sizeof(int) * numOfProcs);
     memset(*numOfNodesForProc, 0, sizeof(int) * numOfProcs);
@@ -78,24 +78,24 @@ void prepareForDistribution(Graph *graph, int numOfProcs, int **numOfNodesForPro
     qsort((void *) &graph->nodes, graph->numOfNodes, 
         sizeof(Node), nodeComparator);
 
-    actNodeNum = graph->numOfNodes;
+    i = graph->numOfNodes;
     actProc = 0;
     // boolean flag inidicating if we are going forward or backward while
     // choosing the next process
     forward = 1;
-    while (actNodeNum > 0) {
-        actSize = getNodeSize(graph, actNodeNum);
+    while (i > 0) {
+        actNode = &graph->nodes[i];
+        actNodeNum = actNode->num;
+        actSize = getNodeSize(actNode);
         if (actProc != ROOT && actSize >= remainingSpace[actProc]) {
             graph->procForNode[actNodeNum] = actProc;
             (*numOfNodesForProc)[actProc]++;
             remainingSpace[actProc] -= actSize;
-            actNodeNum--;
+            i--;
         }
         if (actProc == 0 && !forward) {
-            actProc = 1;
             forward = 1;
         } else if (actProc == numOfProcs - 1 && forward) {
-            actProc = numOfProcs - 2;
             forward = 0;
         } else {
             actProc = forward ? actProc + 1 : actProc - 1;
@@ -103,22 +103,80 @@ void prepareForDistribution(Graph *graph, int numOfProcs, int **numOfNodesForPro
     }
 }
 
-// called only in root
-void distributeGraph(FILE *inFile, Graph *graph, int *numOfNodesForProc)
+void prepareForDistribution(int *numOfNodesForProc, int numOfProcs)
 {
-    int i;
-    /*
-    MPI_Isend(
-                rows + (rowsPerProc - 1) * numPointsPerDim,
-                numPointsPerDim,
-                MPI_DOUBLE,
-                lower,
-                MPI_SEND_UPPER,
-                MPI_COMM_WORLD,
-                &requests[2]
-            );
-    */
+    int actProc;
+    MPI_Request requests[numOfProcs - 1];
+    // Informs all processes how many nodes they will receive 
+    for (actProc = 0; actProc < numOfProcs; ++actProc) {
+        if (actProc != ROOT) {
+            MPI_Isend(numOfNodesForProc + actProc, 1, MPI_INT, actProc,
+                NUM_NODES_TAG, MPI_COMM_WORLD, requests + actProc);
+        }
+    }
+    MPI_Waitall(numOfProcs - 1, requests, MPI_STATUSES_IGNORE);
 }
+
+// Called in root
+// TODO: send in edges
+void distributeGraph(FILE *inFile, Graph *graph, int *numOfNodesForProc,
+    int numOfProcs)
+{
+    prepareForDistribution(numOfNodesForProc, numOfProcs);
+    int actProc, actNode, actOutDeg, i, j, temp;
+    // Buffer used to send node's outgoing edges to a process
+    // At first index will be sent number of node, 
+    // then the outgoing edges
+    int tempBuf[graph->numOfNodes + 1];
+    MPI_Request request;
+
+    fscanf(inFile, "%d\n", &temp);
+    assert(temp == graph->numOfNodes);
+
+    // Assumes, that input is encoded correctly
+    for (i = 1; i <= graph->numOfNodes; ++i) {
+        fscanf(inFile, "%d %d\n", &actNode, &actOutDeg);
+        actProc = graph->procForNode[actNode];
+        if (i > 1) {
+            // Wait for previous send to complete
+            MPI_Wait(&request, MPI_STATUSES_IGNORE);
+        }
+        tempBuf[0] = actNode;
+        for (j = 0; j < actOutDeg; ++j) {
+            fscanf(inFile, "%d\n", tempBuf + j + 1);
+        }
+        MPI_Isend(tempBuf, actOutDeg + 1, MPI_INT, actProc,
+            NODE_EDGES_TAG, MPI_COMM_WORLD, &request);
+    }
+    // Wait for last send to complete
+    MPI_Wait(&request, MPI_STATUSES_IGNORE);
+}
+
+// Called in workers
+void receiveGraph(Graph *graph)
+{
+    int numOfNodes, i, receivedCount, actNode, actOutDeg;
+    MPI_Status status;
+
+    MPI_Recv(&numOfNodes, 1, MPI_INT, ROOT, NUM_NODES_TAG,
+        MPI_COMM_WORLD, &status);
+    
+    // Buffer to receive node with outgoing edges
+    int tempBuf[MAX_NUM_OF_NODES + 1];
+    for (i = 0; i < numOfNodes; ++i) {
+        MPI_Recv(tempBuf, MAX_NUM_OF_NODES + 1, MPI_INT, ROOT,
+            NODE_EDGES_TAG, MPI_COMM_WORLD, &status);
+        MPI_Get_count(&status, MPI_INT, &receivedCount);
+        actOutDeg = receivedCount - 1;
+        actNode = tempBuf[0];
+        graph->nodesInGraph[actNode] = 1;
+        graph->nodes[actNode].num = actNode;
+        graph->nodes[actNode].outDegree = actOutDeg;
+        graph->nodes[actNode].outEdges = (int *) malloc(sizeof(int) * actOutDeg);
+        memset(graph->nodes[actNode].outEdges, 0, sizeof(int) * actOutDeg);
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3) {
@@ -128,6 +186,7 @@ int main(int argc, char **argv)
     int rank;
     int numOfProcs;
     Graph graph;
+    Graph pattern;
     char *inFileName = argv[1];
     char *outFileName = argv[2];
     FILE *inFile = NULL;
@@ -157,20 +216,19 @@ int main(int argc, char **argv)
         MPI_Bcast(&graph.numOfNodes, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
         prepareGraph(&graph);
         countDegrees(inFile, &graph);
-        prepareForDistribution(&graph, numOfProcs, &numOfNodesForProc);
+        assignNodeToProc(&graph, numOfProcs, &numOfNodesForProc);
         rewind(inFile);
+        distributeGraph(inFile, &graph, numOfNodesForProc, numOfProcs);
+        //readAndBroadcastPattern(inFile, &pattern);
+        fclose(inFile);
     } else {
         MPI_Bcast(&graph.numOfNodes, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
         prepareGraph(&graph);
+        receiveGraph(&graph);
+        //receivePattern(&pattern);
     }
 
-    //partitionGraph(inFile, &graph, rank);
-    if (rank == ROOT) {
-        fclose(inFile);
-    }
-
-
-
+    // patternMatch()
 
     if (rank == ROOT) {
         fclose(outFile);

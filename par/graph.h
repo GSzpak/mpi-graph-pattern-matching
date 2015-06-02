@@ -5,6 +5,7 @@
  * Data structure for sorting nodes by sum of degrees
  */
 typedef struct {
+    int num;
     int *outEdges;
     int *inEdges;
     int outDegree;
@@ -19,7 +20,7 @@ typedef struct {
     // 1 if node is graph and 0 otherwise
     int *nodesInGraph;
     // array of nodes
-    // In worker - node i is under index i
+    // In worker - node i is at index i
     // In root - used to sort nodes by (inDegree + outDegree)
     // to distribute nodes possibly evenly
     Node *nodes;
