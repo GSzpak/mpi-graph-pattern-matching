@@ -8,7 +8,9 @@
 void printNodeDebug(Node *node)
 {
     int i;
-    printf("Node %d\n", node->num);
+    printf("Node %d, outDegree %d, inDegree %d\n", 
+        node->num, node->outDegree, node->inDegree);
+    /*
     printf("Out edges: ");
     for (i = 0; i < node->outDegree; ++i) {
         printf("%d ", node->outEdges[i]);
@@ -18,6 +20,7 @@ void printNodeDebug(Node *node)
         printf("%d ", node->inEdges[i]);
     }
     printf("\n");
+    */
 }
 
 void printGraphDebug(Graph *graph)
@@ -25,7 +28,9 @@ void printGraphDebug(Graph *graph)
     int i;
     printf("Number of nodes: %d\n", graph->numOfNodes);
     for(i = 1; i <= graph->numOfNodes; ++i) {
-        printNodeDebug(&graph->nodes[i]);
+        //if (graph->nodesInGraph[i]) {
+            printNodeDebug(&graph->nodes[i]);
+        //}
     }
 }
 

@@ -17,12 +17,15 @@
 static const int NUM_NODES_TAG = 49;
 static const int NODE_EDGES_TAG = 50;
 
+
 // TODO: move procForNode outside
 void prepareGraph(Graph *graph)
 {
     int i;
+    graph->nodesInGraph = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1)); 
     graph->nodes = (Node *) malloc(sizeof(Node) * (graph->numOfNodes + 1));
     graph->procForNode = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
+    memset(graph->nodesInGraph, 0, sizeof(int) * (graph->numOfNodes + 1));
     memset(graph->nodes, 0, sizeof(Node) * (graph->numOfNodes + 1));
     memset(graph->procForNode, 0, sizeof(int) * (graph->numOfNodes + 1));
     for (i = 1; i <= graph->numOfNodes; ++i) {
@@ -104,7 +107,8 @@ void assignNodeToProc(Graph *graph, int numOfProcs,
     for (i = 0; i < numOfProcs; ++i) {
         remainingSpace[i] = SIZE_AVAILABLE;
     }
-    qsort((void *) &graph->nodes, graph->numOfNodes, 
+
+    qsort(graph->nodes, graph->numOfNodes + 1, 
         sizeof(Node), nodeComparator);
 
     i = graph->numOfNodes;
@@ -138,9 +142,11 @@ void prepareForDistribution(int *numOfNodesForProc, int numOfProcs)
     MPI_Request requests[numOfProcs - 1];
     // Informs all processes how many nodes they will receive 
     for (actProc = 0; actProc < numOfProcs; ++actProc) {
+        MPI_Request *actRequest = actProc < ROOT ? requests + actProc :
+            requests + actProc - 1;
         if (actProc != ROOT) {
             MPI_Isend(numOfNodesForProc + actProc, 1, MPI_INT, actProc,
-                NUM_NODES_TAG, MPI_COMM_WORLD, requests + actProc);
+                NUM_NODES_TAG, MPI_COMM_WORLD, actRequest);
         }
     }
     MPI_Waitall(numOfProcs - 1, requests, MPI_STATUSES_IGNORE);
@@ -198,6 +204,7 @@ void receiveGraph(Graph *graph)
         MPI_Get_count(&status, MPI_INT, &receivedCount);
         actOutDeg = receivedCount - 1;
         actNode = tempBuf[0];
+        graph->nodesInGraph[actNode] = 1;
         graph->nodes[actNode].num = actNode;
         graph->nodes[actNode].outDegree = actOutDeg;
         graph->nodes[actNode].outEdges = (int *) malloc(sizeof(int) * actOutDeg);

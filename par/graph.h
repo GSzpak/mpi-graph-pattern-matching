@@ -17,6 +17,9 @@ typedef struct {
  */
 typedef struct {
     int numOfNodes;
+    // nodesInGraph[i] == 1, when node i is in the graph,
+    // and 0 otherwise
+    int *nodesInGraph;
     // Array of nodes
     // In worker - node i is at index i
     // In root - used to sort nodes by (inDegree + outDegree)
@@ -25,7 +28,6 @@ typedef struct {
     Node *nodes;
     // Map node -> process
     int *procForNode;
-    // int maxNodeWithOutEdgesId;
 } Graph;
 
 void printNodeDebug(Node *node);
