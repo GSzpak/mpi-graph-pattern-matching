@@ -8,9 +8,10 @@
 #include "common.h"
 
 #define MAX_NUM_OF_NODES 10000000
+#define MAX_PATTERN_NODES 10
+#define MAX_PATTERN_SIZE 1 + MAX_PATTERN_NODES * (2 + 2 * MAX_PATTERN_NODES)
 #define SIZE_AVAILABLE 20
 #define ROOT 0
-#define META_INF_SIZE 3
 
 
 static const int NUM_NODES_TAG = 49;
@@ -19,12 +20,14 @@ static const int NODE_EDGES_TAG = 50;
 // TODO: move procForNode outside
 void prepareGraph(Graph *graph)
 {
-    graph->nodesInGraph = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
+    int i;
     graph->nodes = (Node *) malloc(sizeof(Node) * (graph->numOfNodes + 1));
     graph->procForNode = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
-    memset(graph->nodesInGraph, 0, sizeof(int) * (graph->numOfNodes + 1));
     memset(graph->nodes, 0, sizeof(Node) * (graph->numOfNodes + 1));
     memset(graph->procForNode, 0, sizeof(int) * (graph->numOfNodes + 1));
+    for (i = 1; i <= graph->numOfNodes; ++i) {
+        graph->nodes[i].num = -1;
+    }
 }
 
 // Called only in root
@@ -33,6 +36,7 @@ void countDegrees(FILE *inFile, Graph *graph)
     int actNode, actOutDeg, actNeighbour, i, j;
     for (i = 0; i < graph->numOfNodes; ++i) {
         fscanf(inFile, "%d %d\n", &actNode, &actOutDeg);
+        graph->nodes[actNode].num = actNode;
         for (j = 0; j < actOutDeg; ++j) {
             fscanf(inFile, "%d\n", &actNeighbour);
             graph->nodes[actNeighbour].inDegree += 1;
@@ -84,7 +88,7 @@ int nodeComparator(const void *elem1, const void *elem2)
 
 int getNodeSize(Node *node)
 {
-    return (node->inDegree + node->outDegree + 2) * sizeof(int);
+    return sizeof(Node) + (node->inDegree + node->outDegree) * sizeof(int);
 }
 
 // Assigns nodes to processes evenly by (inDegree + outDegree)
@@ -194,7 +198,6 @@ void receiveGraph(Graph *graph)
         MPI_Get_count(&status, MPI_INT, &receivedCount);
         actOutDeg = receivedCount - 1;
         actNode = tempBuf[0];
-        graph->nodesInGraph[actNode] = 1;
         graph->nodes[actNode].num = actNode;
         graph->nodes[actNode].outDegree = actOutDeg;
         graph->nodes[actNode].outEdges = (int *) malloc(sizeof(int) * actOutDeg);
@@ -225,14 +228,70 @@ void readPattern(FILE *inFile, Graph *pattern)
     }
 }
 
+/*
+ * Pattern will be encoded in a following way:
+ * number of nodes, then for every node:
+ * outDeg, inDeg, outEdges, inEdges.
+ * Nodes are sorted by their number.
+ */
 void broadcastPattern(Graph *pattern)
 {
-
+    int actIndex, node, size, i;
+    Node *actNode;
+    
+    size = 2 * pattern->numOfNodes + 1;
+    for (node = 1; node <= pattern->numOfNodes; ++node) {
+        size = size + pattern->nodes[node].inDegree + 
+            pattern->nodes[node].outDegree;
+    }
+    
+    int buf[size];
+    buf[0] = pattern->numOfNodes;
+    actIndex = 1;
+    for (node = 1; node <= pattern->numOfNodes; ++node) {
+        actNode = &pattern->nodes[node];
+        buf[actIndex] = actNode->outDegree;
+        actIndex++;
+        buf[actIndex] = actNode->inDegree;
+        actIndex++;
+        for (i = 0; i < actNode->outDegree; ++i) {
+            buf[actIndex] = actNode->outEdges[i];
+            actIndex++;
+        }
+        for (i = 0; i < actNode->inDegree; ++i) {
+            buf[actIndex] = actNode->inEdges[i];
+            actIndex++;
+        }
+    }
+    MPI_Bcast(buf, size, MPI_INT, ROOT, MPI_COMM_WORLD);
 }
 
 void receivePattern(Graph *pattern)
 {
-
+    int node, i, actIndex;
+    Node *actNode;
+    int buf[MAX_PATTERN_SIZE];
+    
+    MPI_Bcast(buf, MAX_PATTERN_SIZE, MPI_INT, ROOT, MPI_COMM_WORLD);
+    pattern->numOfNodes = buf[0];
+    prepareGraph(pattern);
+    actIndex = 1;
+    for (node = 1; node <= pattern->numOfNodes; ++node) {
+        actNode = &pattern->nodes[node];
+        actNode->num = node;
+        actNode->outDegree = buf[actIndex];
+        actIndex++;
+        actNode->inDegree = buf[actIndex];
+        actIndex++;
+        for (i = 0; i < actNode->outDegree; ++i) {
+            actNode->outEdges[i] = buf[actIndex];
+            actIndex++;
+        }
+        for (i = 0; i < actNode->inDegree; ++i) {
+            actNode->inEdges[i] = buf[actIndex];
+            actIndex++;
+        }
+    }
 }
 
 int main(int argc, char **argv)

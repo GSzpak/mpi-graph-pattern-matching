@@ -17,12 +17,11 @@ typedef struct {
  */
 typedef struct {
     int numOfNodes;
-    // 1 if node is graph and 0 otherwise
-    int *nodesInGraph;
-    // array of nodes
+    // Array of nodes
     // In worker - node i is at index i
     // In root - used to sort nodes by (inDegree + outDegree)
     // to distribute nodes possibly evenly
+    // If node is not in graph, then its num == -1
     Node *nodes;
     // Map node -> process
     int *procForNode;
