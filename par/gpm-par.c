@@ -16,7 +16,7 @@
 static const int NUM_NODES_TAG = 49;
 static const int NODE_EDGES_TAG = 50;
 
-
+// TODO: move procForNode outside
 void prepareGraph(Graph *graph)
 {
     graph->nodesInGraph = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
@@ -38,6 +38,31 @@ void countDegrees(FILE *inFile, Graph *graph)
             graph->nodes[actNeighbour].inDegree += 1;
             graph->nodes[actNode].outDegree += 1;
         }
+    }
+}
+
+void prepareMainGraph(FILE *inFile, Graph *graph)
+{
+    fscanf(inFile, "%d\n", &graph->numOfNodes);
+    MPI_Bcast(&graph->numOfNodes, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
+    prepareGraph(graph);
+    countDegrees(inFile, graph);
+}
+
+void preparePattern(FILE *inFile, Graph *pattern)
+{
+    int i;
+    Node *actNode;
+
+    fscanf(inFile, "\n%d\n", &pattern->numOfNodes);
+    prepareGraph(pattern);
+    countDegrees(inFile, pattern);
+    for (i = 1; i <= pattern->numOfNodes; ++i) {
+        actNode = &pattern->nodes[i];
+        actNode->outEdges = (int *) malloc(sizeof(int) * actNode->outDegree);
+        memset(actNode->outEdges, 0, sizeof(int) * actNode->outDegree);
+        actNode->inEdges = (int *) malloc(sizeof(int) * actNode->inDegree);
+        memset(actNode->inEdges, 0, sizeof(int) * actNode->inDegree);
     }
 }
 
@@ -177,6 +202,39 @@ void receiveGraph(Graph *graph)
     }
 }
 
+void readPattern(FILE *inFile, Graph *pattern)
+{
+    int i, j, numOfNodes, actNodeNum, actOutDeg, actNeighbour, inIndex;
+    Node *actNode;
+    int lastInIndex[pattern->numOfNodes + 1];
+    memset(lastInIndex, 0, sizeof(int) * pattern->numOfNodes + 1);
+    
+    fscanf(inFile, "\n%d\n", &numOfNodes);
+    assert(numOfNodes == pattern->numOfNodes);
+    
+    for (i = 0; i < numOfNodes; ++i) {
+        fscanf(inFile, "%d %d\n", &actNodeNum, &actOutDeg);
+        actNode = &pattern->nodes[actNodeNum];
+        for (j = 0; j < actOutDeg; ++j) {
+            fscanf(inFile, "%d\n", &actNeighbour);
+            actNode->outEdges[j] = actNeighbour;
+            inIndex = lastInIndex[actNeighbour];
+            pattern->nodes[actNeighbour].inEdges[inIndex] = actNodeNum;
+            lastInIndex[actNeighbour]++;
+        }
+    }
+}
+
+void broadcastPattern(Graph *pattern)
+{
+
+}
+
+void receivePattern(Graph *pattern)
+{
+
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3) {
@@ -212,20 +270,19 @@ int main(int argc, char **argv)
     }
 
     if (rank == ROOT) {
-        fscanf(inFile, "%d\n", &graph.numOfNodes);
-        MPI_Bcast(&graph.numOfNodes, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
-        prepareGraph(&graph);
-        countDegrees(inFile, &graph);
+        prepareMainGraph(inFile, &graph);
+        preparePattern(inFile, &pattern);
         assignNodeToProc(&graph, numOfProcs, &numOfNodesForProc);
         rewind(inFile);
         distributeGraph(inFile, &graph, numOfNodesForProc, numOfProcs);
-        //readAndBroadcastPattern(inFile, &pattern);
+        readPattern(inFile, &pattern);
+        broadcastPattern(&pattern);
         fclose(inFile);
     } else {
         MPI_Bcast(&graph.numOfNodes, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
         prepareGraph(&graph);
         receiveGraph(&graph);
-        //receivePattern(&pattern);
+        receivePattern(&pattern);
     }
 
     // patternMatch()
