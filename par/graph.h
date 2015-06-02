@@ -28,16 +28,7 @@ typedef struct {
     // int maxNodeWithOutEdgesId;
 } Graph;
 
-/*
-Graph* readGraph(FILE* f);
+void printNodeDebug(Node *node);
+void printGraphDebug(Graph *graph);
 
-void printGraph(Graph* g);
-
-void freeGraph(Graph* graph);
-
-Graph* reverseGraph(Graph* graph);
-
-int dfs(int node, int nextId, int parentNode, Graph* graph, Graph* reversed,
-        int* numbering, int* parent, int throughReverseEdge);
-*/
 #endif //GRAPH_H
