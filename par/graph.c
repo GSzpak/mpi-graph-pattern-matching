@@ -49,6 +49,7 @@ void freeGraph(Graph *graph) {
     for(i = 0; i <= graph->numOfNodes; ++i) {
         freeNode(&graph->nodes[i]);
     }
+    free(graph->nodesInGraph)
     free(graph->nodes);
     free(graph->procForNode);
     graph->numOfNodes = 0;
