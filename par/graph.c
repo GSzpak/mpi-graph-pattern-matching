@@ -1,9 +1,25 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "graph.h"
 #include "common.h"
 
+
+// TODO: move procForNode outside
+void prepareGraph(Graph *graph)
+{
+    int i;
+    graph->nodesInGraph = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1)); 
+    graph->nodes = (Node *) malloc(sizeof(Node) * (graph->numOfNodes + 1));
+    graph->procForNode = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
+    memset(graph->nodesInGraph, 0, sizeof(int) * (graph->numOfNodes + 1));
+    memset(graph->nodes, 0, sizeof(Node) * (graph->numOfNodes + 1));
+    memset(graph->procForNode, 0, sizeof(int) * (graph->numOfNodes + 1));
+    for (i = 1; i <= graph->numOfNodes; ++i) {
+        graph->nodes[i].num = i;
+    }
+}
 
 void printNodeDebug(Node *node)
 {
@@ -50,10 +66,15 @@ void freeNode(Node *node) {
 void freeGraph(Graph *graph) {
     int i;
     for(i = 0; i <= graph->numOfNodes; ++i) {
-        freeNode(&graph->nodes[i]);
+        //if (graph->nodesInGraph[i] == 1) {
+            freeNode(&graph->nodes[i]);
+        //}
     }
     free(graph->nodesInGraph);
     free(graph->nodes);
     free(graph->procForNode);
+    graph->nodesInGraph = NULL;
+    graph->nodes = NULL;
+    graph->procForNode = NULL;
     graph->numOfNodes = 0;
 }

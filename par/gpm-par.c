@@ -39,19 +39,7 @@ int isLineEmpty(const char *line)
 }
 
 // TODO: move procForNode outside
-void prepareGraph(Graph *graph)
-{
-    int i;
-    graph->nodesInGraph = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1)); 
-    graph->nodes = (Node *) malloc(sizeof(Node) * (graph->numOfNodes + 1));
-    graph->procForNode = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
-    memset(graph->nodesInGraph, 0, sizeof(int) * (graph->numOfNodes + 1));
-    memset(graph->nodes, 0, sizeof(Node) * (graph->numOfNodes + 1));
-    memset(graph->procForNode, 0, sizeof(int) * (graph->numOfNodes + 1));
-    for (i = 1; i <= graph->numOfNodes; ++i) {
-        graph->nodes[i].num = i;
-    }
-}
+
 
 // Called only in root
 void countDegrees(FILE *inFile, Graph *graph)
@@ -119,7 +107,9 @@ int getNodeSize(Node *node)
     return sizeof(Node) + (node->inDegree + node->outDegree) * sizeof(int);
 }
 
-// Assigns nodes to processes evenly by (inDegree + outDegree)
+/*
+ * Assigns nodes to processes evenly by (inDegree + outDegree)
+ */
 void assignNodeToProc(Graph *graph, int numOfProcs, 
     int **numOfNodesForProc)
 {
@@ -128,13 +118,15 @@ void assignNodeToProc(Graph *graph, int numOfProcs,
     int remainingSpace[numOfProcs];
     *numOfNodesForProc = (int *) malloc(sizeof(int) * numOfProcs);
     memset(*numOfNodesForProc, 0, sizeof(int) * numOfProcs);
-       
+    // Copy of array of nodes - will be used for sorting by inDeg + outDeg
+    Node *nodesCopy = (Node *) malloc(sizeof(Node) * (graph->numOfNodes + 1));
+    memcpy(nodesCopy, graph->nodes, sizeof(Node) * (graph->numOfNodes + 1));
+
     for (i = 0; i < numOfProcs; ++i) {
         remainingSpace[i] = SIZE_AVAILABLE;
     }
 
-    qsort(graph->nodes, graph->numOfNodes + 1, 
-        sizeof(Node), nodeComparator);
+    qsort(nodesCopy, graph->numOfNodes + 1, sizeof(Node), nodeComparator);
 
     i = graph->numOfNodes;
     actProc = ROOT + 1;
@@ -142,7 +134,7 @@ void assignNodeToProc(Graph *graph, int numOfProcs,
     // choosing the next process
     forward = 1;
     while (i > 0) {
-        actNode = &graph->nodes[i];
+        actNode = &nodesCopy[i];
         actNodeNum = actNode->num;
         actSize = getNodeSize(actNode);
         if (actSize < remainingSpace[actProc]) {
@@ -159,6 +151,7 @@ void assignNodeToProc(Graph *graph, int numOfProcs,
             actProc = forward ? actProc + 1 : actProc - 1;
         }
     }
+    free(nodesCopy);
 }
 
 void prepareForDistribution(int *numOfNodesForProc, int numOfProcs)
@@ -412,6 +405,9 @@ int main(int argc, char **argv)
         free(numOfNodesForProc);
         printf("end\n");
     }
+
+    freeGraph(&graph);
+    freeGraph(&pattern);
 
     MPI_Finalize();
 

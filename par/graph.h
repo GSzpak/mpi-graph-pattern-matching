@@ -30,7 +30,11 @@ typedef struct {
     int *procForNode;
 } Graph;
 
+
+void prepareGraph(Graph *graph);
 void printNodeDebug(Node *node);
 void printGraphDebug(Graph *graph);
+void freeNode(Node *node);
+void freeGraph(Graph *graph);
 
 #endif //GRAPH_H
