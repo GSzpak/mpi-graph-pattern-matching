@@ -9,11 +9,16 @@
 #include "graph.h"
 #include "common.h"
 
+
 #define LOCAL_READ_BUF_SIZE 64
 #define MAX_NUM_OF_NODES 10000000
+// Macro used in graph distribution
+// Check distributeGraph function for more information
+#define MAX_NODE_ENCODING 2 * MAX_NUM_OF_NODES + 3
 #define MAX_PATTERN_NODES 10
 #define MAX_PATTERN_SIZE 1 + MAX_PATTERN_NODES * (2 + 2 * MAX_PATTERN_NODES)
-#define SIZE_AVAILABLE 200
+// Each process has 128MB for its nodes
+#define SIZE_AVAILABLE 128000000
 #define ROOT 0
 
 
@@ -23,7 +28,7 @@ static const int NODE_EDGES_TAG = 50;
 
 int isLineEmpty(const char *line)
 {
-    /* check if the string consists only of spaces. */
+    // Check if the string consists only of spaces
     while (*line != '\0') {
         if (isspace(*line) == 0) {
             return 0;
@@ -178,13 +183,14 @@ void distributeGraph(FILE *inFile, Graph *graph, int *numOfNodesForProc,
     int numOfProcs)
 {
     prepareForDistribution(numOfNodesForProc, numOfProcs);
-    int actProc, actNode, actOutDeg, i, temp;
-    // Buffer used to send node's outgoing edges to a process
-    // At first index will be sent number of node, 
-    // then the outgoing edges
-    //TODO: change for malloc
-    int tempBuf[graph->numOfNodes + 1];
+    int actProc, actNode, actOutDeg, actNeighbour, i, temp;
     char line[LOCAL_READ_BUF_SIZE];
+    // Buffer used to send node's outgoing edges to a process
+    // Node will be encoded as follows: number of node, outDegree, inDegree,
+    // then for each edge pair (destNode, processForDestNode)
+    // TODO: change for malloc
+    int *tempBuf = (int *) malloc(sizeof(int) * MAX_NODE_ENCODING);
+    memset(tempBuf, 0, sizeof(int) * MAX_NODE_ENCODING);
 
     fscanf(inFile, "%d\n", &temp);
     assert(temp == graph->numOfNodes);
@@ -195,20 +201,25 @@ void distributeGraph(FILE *inFile, Graph *graph, int *numOfNodesForProc,
         sscanf(line, "%d %d\n", &actNode, &actOutDeg);
         actProc = graph->procForNode[actNode];
         tempBuf[0] = actNode;
+        tempBuf[1] = actOutDeg;
+        tempBuf[2] = graph->nodes[actNode].inDegree;
         for (i = 0; i < actOutDeg; ++i) {
             fgets(line, sizeof(line), inFile);
-            sscanf(line, "%d", tempBuf + i + 1);
+            sscanf(line, "%d", &actNeighbour);
+            tempBuf[2 * i + 3] = actNeighbour;
+            tempBuf[2 * i + 4] = graph->procForNode[actNeighbour];
         }
-        MPI_Send(tempBuf, actOutDeg + 1, MPI_INT, actProc,
+        MPI_Send(tempBuf, 2 * actOutDeg + 3, MPI_INT, actProc,
             NODE_EDGES_TAG, MPI_COMM_WORLD);
     }
+    free(tempBuf);
     printf("Finish\n");
 }
 
 // Called in workers
-void receiveGraph(Graph *graph)
+void receiveGraph(int rank, Graph *graph)
 {
-    int numOfNodes, receivedCount, actNodeNum, actOutDeg, i, j;
+    int numOfNodes, actNodeNum, actOutDeg, actInDeg, actNeighbour, i, j;
     Node *actNode;
     MPI_Status status;
 
@@ -217,28 +228,33 @@ void receiveGraph(Graph *graph)
     printf("num of nodes %d\n", numOfNodes);
     fflush(stdout);
 
-    // Buffer to receive node with outgoing edges
-    int *tempBuf = (int *) malloc(sizeof(int) * (MAX_NUM_OF_NODES + 1));
-    memset(tempBuf, 0, sizeof(int) * (MAX_NUM_OF_NODES + 1));
+    // Buffer to receive node information from root
+    // Check distributeGraph for node encoding
+    int *tempBuf = (int *) malloc(sizeof(int) * MAX_NODE_ENCODING);
+    memset(tempBuf, 0, sizeof(int) * MAX_NODE_ENCODING);
     
     for (i = 0; i < numOfNodes; ++i) {
-        MPI_Recv(tempBuf, MAX_NUM_OF_NODES + 1, MPI_INT, ROOT,
+        MPI_Recv(tempBuf, MAX_NODE_ENCODING, MPI_INT, ROOT,
             NODE_EDGES_TAG, MPI_COMM_WORLD, &status);
-        MPI_Get_count(&status, MPI_INT, &receivedCount);
-        actOutDeg = receivedCount - 1;
         actNodeNum = tempBuf[0];
+        actOutDeg = tempBuf[1];
+        actInDeg = tempBuf[2];
         graph->nodesInGraph[actNodeNum] = 1;
+        graph->procForNode[actNodeNum] = rank;
         actNode = &graph->nodes[actNodeNum];
         actNode->num = actNodeNum;
         actNode->outDegree = actOutDeg;
+        actNode->inDegree = actInDeg;
         actNode->outEdges = (int *) malloc(sizeof(int) * actOutDeg);
-        memset(actNode->outEdges, 0, sizeof(int) * actOutDeg);
-        for (j = 1; j <= actOutDeg; ++j) {
-            actNode->outEdges[j - 1] = tempBuf[j];
+        actNode->inEdges = (int *) malloc(sizeof(int) * actInDeg);
+        for (j = 0; j < actOutDeg; ++j) {
+            actNeighbour = tempBuf[2 * j + 3];
+            actNode->outEdges[j] = actNeighbour;
+            graph->procForNode[actNeighbour] = tempBuf[2 * j + 4];
         }
     }
+
     free(tempBuf);
-    
 }
 
 void readPattern(FILE *inFile, Graph *pattern)
@@ -381,12 +397,12 @@ int main(int argc, char **argv)
         MPI_Bcast(&graph.numOfNodes, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
         prepareGraph(&graph);
         printf("%d graph prepared\n", rank);
-        receiveGraph(&graph);
+        receiveGraph(rank, &graph);
+        sleep(rank);        
         printf("%d graph received\n", rank);
+        printf("\n");
+        printGraphDebug(&graph);
         receivePattern(&pattern);
-        if (rank == 3) {
-            printGraphDebug(&pattern);
-        }
     }
 
     // patternMatch()

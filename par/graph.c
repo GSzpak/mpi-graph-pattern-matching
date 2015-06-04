@@ -14,10 +14,12 @@ void printNodeDebug(Node *node)
     for (i = 0; i < node->outDegree; ++i) {
         printf("%d ", node->outEdges[i]);
     }
+    /*
     printf("\nIn edges: ");
     for (i = 0; i < node->inDegree; ++i) {
         printf("%d ", node->inEdges[i]);
     }
+    */
     printf("\n");
 }
 
@@ -29,7 +31,9 @@ void printGraphDebug(Graph *graph)
         if (graph->nodesInGraph[i]) {
             printNodeDebug(&graph->nodes[i]);
         }
-        printf("Node %d in process %d\n", i, graph->procForNode[i]);
+        if (graph->procForNode[i] != 0) {
+            printf("Node %d in process %d\n", i, graph->procForNode[i]);    
+        }
     }
 }
 
