@@ -7,6 +7,7 @@
 
 
 // TODO: move procForNode outside
+// FIXME: numOfNodes in workers
 void prepareGraph(Graph *graph)
 {
     int i;
@@ -30,12 +31,10 @@ void printNodeDebug(Node *node)
     for (i = 0; i < node->outDegree; ++i) {
         printf("%d ", node->outEdges[i]);
     }
-    /*
     printf("\nIn edges: ");
     for (i = 0; i < node->inDegree; ++i) {
         printf("%d ", node->inEdges[i]);
     }
-    */
     printf("\n");
 }
 
