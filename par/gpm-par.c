@@ -3,20 +3,35 @@
 #include <string.h>
 #include <mpi.h>
 #include <assert.h>
+#include <ctype.h>
+#include <unistd.h> // TODO: delete
 
 #include "graph.h"
 #include "common.h"
 
+#define LOCAL_READ_BUF_SIZE 64
 #define MAX_NUM_OF_NODES 10000000
 #define MAX_PATTERN_NODES 10
 #define MAX_PATTERN_SIZE 1 + MAX_PATTERN_NODES * (2 + 2 * MAX_PATTERN_NODES)
-#define SIZE_AVAILABLE 20
+#define SIZE_AVAILABLE 200
 #define ROOT 0
 
 
 static const int NUM_NODES_TAG = 49;
 static const int NODE_EDGES_TAG = 50;
 
+
+int isLineEmpty(const char *line)
+{
+    /* check if the string consists only of spaces. */
+    while (*line != '\0') {
+        if (isspace(*line) == 0) {
+            return 0;
+        }
+        line++;
+    }
+    return 1;
+}
 
 // TODO: move procForNode outside
 void prepareGraph(Graph *graph)
@@ -29,19 +44,22 @@ void prepareGraph(Graph *graph)
     memset(graph->nodes, 0, sizeof(Node) * (graph->numOfNodes + 1));
     memset(graph->procForNode, 0, sizeof(int) * (graph->numOfNodes + 1));
     for (i = 1; i <= graph->numOfNodes; ++i) {
-        graph->nodes[i].num = -1;
+        graph->nodes[i].num = i;
     }
 }
 
 // Called only in root
 void countDegrees(FILE *inFile, Graph *graph)
 {
-    int actNode, actOutDeg, actNeighbour, i, j;
-    for (i = 0; i < graph->numOfNodes; ++i) {
-        fscanf(inFile, "%d %d\n", &actNode, &actOutDeg);
+    char line[LOCAL_READ_BUF_SIZE];
+    int actNode, actOutDeg, actNeighbour, i;
+    while ((fgets(line, sizeof(line), inFile) != NULL) && 
+        (isLineEmpty(line) == 0)) {
+        sscanf(line, "%d %d", &actNode, &actOutDeg);
         graph->nodes[actNode].num = actNode;
-        for (j = 0; j < actOutDeg; ++j) {
-            fscanf(inFile, "%d\n", &actNeighbour);
+        for (i = 0; i < actOutDeg; ++i) {
+            fgets(line, sizeof(line), inFile);
+            sscanf(line, "%d\n", &actNeighbour);
             graph->nodes[actNeighbour].inDegree += 1;
             graph->nodes[actNode].outDegree += 1;
         }
@@ -61,15 +79,17 @@ void preparePattern(FILE *inFile, Graph *pattern)
     int i;
     Node *actNode;
 
-    fscanf(inFile, "\n%d\n", &pattern->numOfNodes);
+    fscanf(inFile, "%d\n", &pattern->numOfNodes);
     prepareGraph(pattern);
     countDegrees(inFile, pattern);
     for (i = 1; i <= pattern->numOfNodes; ++i) {
+        pattern->nodesInGraph[i] = 1;
         actNode = &pattern->nodes[i];
         actNode->outEdges = (int *) malloc(sizeof(int) * actNode->outDegree);
         memset(actNode->outEdges, 0, sizeof(int) * actNode->outDegree);
         actNode->inEdges = (int *) malloc(sizeof(int) * actNode->inDegree);
         memset(actNode->inEdges, 0, sizeof(int) * actNode->inDegree);
+        actNode->num = i;
     }
 }
 
@@ -112,7 +132,7 @@ void assignNodeToProc(Graph *graph, int numOfProcs,
         sizeof(Node), nodeComparator);
 
     i = graph->numOfNodes;
-    actProc = 0;
+    actProc = ROOT + 1;
     // boolean flag inidicating if we are going forward or backward while
     // choosing the next process
     forward = 1;
@@ -120,13 +140,13 @@ void assignNodeToProc(Graph *graph, int numOfProcs,
         actNode = &graph->nodes[i];
         actNodeNum = actNode->num;
         actSize = getNodeSize(actNode);
-        if (actProc != ROOT && actSize >= remainingSpace[actProc]) {
+        if (actSize < remainingSpace[actProc]) {
             graph->procForNode[actNodeNum] = actProc;
             (*numOfNodesForProc)[actProc]++;
             remainingSpace[actProc] -= actSize;
             i--;
         }
-        if (actProc == 0 && !forward) {
+        if (actProc == ROOT + 1 && !forward) {
             forward = 1;
         } else if (actProc == numOfProcs - 1 && forward) {
             forward = 0;
@@ -158,76 +178,88 @@ void distributeGraph(FILE *inFile, Graph *graph, int *numOfNodesForProc,
     int numOfProcs)
 {
     prepareForDistribution(numOfNodesForProc, numOfProcs);
-    int actProc, actNode, actOutDeg, i, j, temp;
+    int actProc, actNode, actOutDeg, i, temp;
     // Buffer used to send node's outgoing edges to a process
     // At first index will be sent number of node, 
     // then the outgoing edges
+    //TODO: change for malloc
     int tempBuf[graph->numOfNodes + 1];
-    MPI_Request request;
+    char line[LOCAL_READ_BUF_SIZE];
 
     fscanf(inFile, "%d\n", &temp);
     assert(temp == graph->numOfNodes);
 
     // Assumes, that input is encoded correctly
-    for (i = 1; i <= graph->numOfNodes; ++i) {
-        fscanf(inFile, "%d %d\n", &actNode, &actOutDeg);
+    while ((fgets(line, sizeof(line), inFile) != NULL) && 
+        (isLineEmpty(line) == 0)) {
+        sscanf(line, "%d %d\n", &actNode, &actOutDeg);
         actProc = graph->procForNode[actNode];
-        if (i > 1) {
-            // Wait for previous send to complete
-            MPI_Wait(&request, MPI_STATUSES_IGNORE);
-        }
         tempBuf[0] = actNode;
-        for (j = 0; j < actOutDeg; ++j) {
-            fscanf(inFile, "%d\n", tempBuf + j + 1);
+        for (i = 0; i < actOutDeg; ++i) {
+            fgets(line, sizeof(line), inFile);
+            sscanf(line, "%d", tempBuf + i + 1);
         }
-        MPI_Isend(tempBuf, actOutDeg + 1, MPI_INT, actProc,
-            NODE_EDGES_TAG, MPI_COMM_WORLD, &request);
+        MPI_Send(tempBuf, actOutDeg + 1, MPI_INT, actProc,
+            NODE_EDGES_TAG, MPI_COMM_WORLD);
     }
-    // Wait for last send to complete
-    MPI_Wait(&request, MPI_STATUSES_IGNORE);
+    printf("Finish\n");
 }
 
 // Called in workers
 void receiveGraph(Graph *graph)
 {
-    int numOfNodes, i, receivedCount, actNode, actOutDeg;
+    int numOfNodes, receivedCount, actNodeNum, actOutDeg, i, j;
+    Node *actNode;
     MPI_Status status;
 
     MPI_Recv(&numOfNodes, 1, MPI_INT, ROOT, NUM_NODES_TAG,
         MPI_COMM_WORLD, &status);
-    
+    printf("num of nodes %d\n", numOfNodes);
+    fflush(stdout);
+
     // Buffer to receive node with outgoing edges
-    int tempBuf[MAX_NUM_OF_NODES + 1];
+    int *tempBuf = (int *) malloc(sizeof(int) * (MAX_NUM_OF_NODES + 1));
+    memset(tempBuf, 0, sizeof(int) * (MAX_NUM_OF_NODES + 1));
+    
     for (i = 0; i < numOfNodes; ++i) {
         MPI_Recv(tempBuf, MAX_NUM_OF_NODES + 1, MPI_INT, ROOT,
             NODE_EDGES_TAG, MPI_COMM_WORLD, &status);
         MPI_Get_count(&status, MPI_INT, &receivedCount);
         actOutDeg = receivedCount - 1;
-        actNode = tempBuf[0];
-        graph->nodesInGraph[actNode] = 1;
-        graph->nodes[actNode].num = actNode;
-        graph->nodes[actNode].outDegree = actOutDeg;
-        graph->nodes[actNode].outEdges = (int *) malloc(sizeof(int) * actOutDeg);
-        memset(graph->nodes[actNode].outEdges, 0, sizeof(int) * actOutDeg);
+        actNodeNum = tempBuf[0];
+        graph->nodesInGraph[actNodeNum] = 1;
+        actNode = &graph->nodes[actNodeNum];
+        actNode->num = actNodeNum;
+        actNode->outDegree = actOutDeg;
+        actNode->outEdges = (int *) malloc(sizeof(int) * actOutDeg);
+        memset(actNode->outEdges, 0, sizeof(int) * actOutDeg);
+        for (j = 1; j <= actOutDeg; ++j) {
+            actNode->outEdges[j - 1] = tempBuf[j];
+        }
     }
+    free(tempBuf);
+    
 }
 
 void readPattern(FILE *inFile, Graph *pattern)
 {
-    int i, j, numOfNodes, actNodeNum, actOutDeg, actNeighbour, inIndex;
+    int i, numOfNodes, actNodeNum, actOutDeg, actNeighbour, inIndex;
     Node *actNode;
     int lastInIndex[pattern->numOfNodes + 1];
-    memset(lastInIndex, 0, sizeof(int) * pattern->numOfNodes + 1);
-    
-    fscanf(inFile, "\n%d\n", &numOfNodes);
+    memset(lastInIndex, 0, sizeof(int) * (pattern->numOfNodes + 1));
+    char line[LOCAL_READ_BUF_SIZE];
+
+    fscanf(inFile, "%d\n", &numOfNodes);
     assert(numOfNodes == pattern->numOfNodes);
     
-    for (i = 0; i < numOfNodes; ++i) {
-        fscanf(inFile, "%d %d\n", &actNodeNum, &actOutDeg);
+    while ((fgets(line, sizeof(line), inFile) != NULL) && 
+        (isLineEmpty(line) == 0)) {
+        sscanf(line, "%d %d", &actNodeNum, &actOutDeg);
         actNode = &pattern->nodes[actNodeNum];
-        for (j = 0; j < actOutDeg; ++j) {
-            fscanf(inFile, "%d\n", &actNeighbour);
-            actNode->outEdges[j] = actNeighbour;
+        for (i = 0; i < actOutDeg; ++i) {
+            fgets(line, sizeof(line), inFile);
+            sscanf(line, "%d", &actNeighbour);
+            actNode->outEdges[i] = actNeighbour;
             inIndex = lastInIndex[actNeighbour];
             pattern->nodes[actNeighbour].inEdges[inIndex] = actNodeNum;
             lastInIndex[actNeighbour]++;
@@ -340,14 +372,19 @@ int main(int argc, char **argv)
         preparePattern(inFile, &pattern);
         assignNodeToProc(&graph, numOfProcs, &numOfNodesForProc);
         rewind(inFile);
+        printf("distributing\n");
         distributeGraph(inFile, &graph, numOfNodesForProc, numOfProcs);
+        printf("reading pattern\n");
         readPattern(inFile, &pattern);
-        broadcastPattern(&pattern);
+        printf("broadcasting pattern\n");
+        //broadcastPattern(&pattern);
         fclose(inFile);
     } else {
         MPI_Bcast(&graph.numOfNodes, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
         prepareGraph(&graph);
+        printf("%d graph prepared\n", rank);
         receiveGraph(&graph);
+        printf("%d graph received\n", rank);
         receivePattern(&pattern);
     }
 
@@ -355,6 +392,8 @@ int main(int argc, char **argv)
 
     if (rank == ROOT) {
         fclose(outFile);
+        free(numOfNodesForProc);
+        printf("end\n");
     }
 
     MPI_Finalize();
