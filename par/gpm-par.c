@@ -181,7 +181,6 @@ void distributeGraph(FILE *inFile, Graph *graph, int *numOfNodesForProc,
     // Buffer used to send node's outgoing edges to a process
     // Node will be encoded as follows: number of node, outDegree, inDegree,
     // then for each edge pair (destNode, processForDestNode)
-    // TODO: change for malloc
     int *tempBuf = (int *) malloc(sizeof(int) * MAX_NODE_ENCODING);
     memset(tempBuf, 0, sizeof(int) * MAX_NODE_ENCODING);
 
@@ -295,6 +294,8 @@ void exchangeIngoingEdges(int rank, Graph *graph)
             }
         }
     }
+
+    assert(actRequest == numOfReceived + numOfSent);
     free(lastInIndex);
     MPI_Waitall(numOfReceived + numOfSent, requests, statuses);
 }
