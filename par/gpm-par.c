@@ -101,24 +101,6 @@ void preparePatternInRoot(FILE *inFile, Graph *pattern)
 }
 
 /*
- * Compares nodes by (inDegree + outDegree)
- */
-int nodeComparator(const void *elem1, const void *elem2)
-{
-    Node *node1 = (Node *) elem1;
-    Node *node2 = (Node *) elem2;
-    int sumOfDegrees1 = node1->inDegree + node1->outDegree;
-    int sumOfDegrees2 = node2->outDegree + node2->outDegree;
-    if (sumOfDegrees1 > sumOfDegrees2) {
-        return 1;
-    } else if (sumOfDegrees1 == sumOfDegrees2) {
-        return 0;
-    } else {
-        return -1;
-    }
-}
-
-/*
  * Assigns nodes to processes evenly by (inDegree + outDegree)
  */
 void assignNodeToProc(Graph *graph, int numOfProcs, 
@@ -223,6 +205,19 @@ void distributeGraph(FILE *inFile, Graph *graph, int *numOfNodesForProc,
             NODE_OUT_EDGES_TAG, MPI_COMM_WORLD);
     }
 
+    // Distributes nodes with outDeg == 0
+    for (i = 0; i < graph->numOfNodes; ++i) {
+        if (graph->nodes[i].outDegree == 0) {
+            actNode = &graph->nodes[i];
+            tempBuf[0] = actNode->num;
+            tempBuf[1] = actNode->outDegree;
+            tempBuf[2] = actNode->inDegree;
+            actProc = graph->procForNode[actNode->num];
+            MPI_Send(tempBuf, 3, MPI_INT, actProc,
+                NODE_OUT_EDGES_TAG, MPI_COMM_WORLD);
+        }
+    }
+
     free(tempBuf);
     printf("Finish\n");
 }
@@ -241,8 +236,10 @@ void prepareGraphInWorker(Graph *graph)
     fflush(stdout);
 }
 
-// Called in workers
-// TODO: one comment style
+/*
+ * Called in workers. Every worker receives: node in/out degree and its
+ * outgoing edges
+ */
 void receiveOutEdges(int rank, int numOfProcs, Graph *graph)
 {
     int actNodeNum, actOutDeg, actInDeg, actNeighbour, i, j;
@@ -266,8 +263,12 @@ void receiveOutEdges(int rank, int numOfProcs, Graph *graph)
         actNode->num = actNodeNum;
         actNode->outDegree = actOutDeg;
         actNode->inDegree = actInDeg;
-        actNode->outEdges = (int *) malloc(sizeof(int) * actOutDeg);
-        actNode->inEdges = (int *) malloc(sizeof(int) * actInDeg);
+        if (actOutDeg > 0) {
+            actNode->outEdges = (int *) malloc(sizeof(int) * actOutDeg);
+        }
+        if (actInDeg > 0) {
+            actNode->inEdges = (int *) malloc(sizeof(int) * actInDeg);
+        }
         for (j = 0; j < actOutDeg; ++j) {
             actNeighbour = tempBuf[2 * j + 3];
             actNode->outEdges[j] = actNeighbour;
@@ -511,6 +512,9 @@ void broadcastPattern(Graph *pattern)
     MPI_Bcast(buf, MAX_PATTERN_SIZE, MPI_INT, ROOT, MPI_COMM_WORLD);
 }
 
+/*
+ * Called in workers. For pattern encoding check broadcastPattern function.
+ */
 void receivePattern(Graph *pattern)
 {
     int numOfNodes, node, i, actIndex;
@@ -556,8 +560,8 @@ int main(int argc, char **argv)
     char *outFileName = argv[2];
     FILE *inFile = NULL;
     FILE *outFile = NULL;
-    // array informing, how many nodes will be sent to each process
-    // used only in root
+    // Array informing, how many nodes will be sent to each process
+    // Used only in root
     int *numOfNodesForProc = NULL;
 
     MPI_Init(&argc, &argv);
@@ -617,7 +621,7 @@ int main(int argc, char **argv)
     }
 
     freeGraph(&graph);
-    //freeGraph(&pattern);
+    freeGraph(&pattern);
 
     MPI_Finalize();
 

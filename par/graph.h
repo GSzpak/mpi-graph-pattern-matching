@@ -31,6 +31,10 @@ typedef struct {
 
 Node *getNode(Graph *graph, int num);
 int getNodeSize(Node *node);
+/*
+ * Compares nodes by (inDegree + outDegree)
+ */
+int nodeComparator(const void *elem1, const void *elem2);
 void prepareGraph(Graph *graph, int numOfNodes, int myPartNumOfNodes);
 void printNodeDebug(Node *node);
 void printGraphDebug(Graph *graph);

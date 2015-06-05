@@ -17,6 +17,21 @@ int getNodeSize(Node *node)
     return sizeof(Node) + (node->inDegree + node->outDegree) * sizeof(int);
 }
 
+int nodeComparator(const void *elem1, const void *elem2)
+{
+    Node *node1 = (Node *) elem1;
+    Node *node2 = (Node *) elem2;
+    int sumOfDegrees1 = node1->inDegree + node1->outDegree;
+    int sumOfDegrees2 = node2->outDegree + node2->outDegree;
+    if (sumOfDegrees1 > sumOfDegrees2) {
+        return 1;
+    } else if (sumOfDegrees1 == sumOfDegrees2) {
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
 void prepareGraph(Graph *graph, int numOfNodes, int myPartNumOfNodes)
 {
     int i;
