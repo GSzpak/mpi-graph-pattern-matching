@@ -3,11 +3,10 @@
 #include <string.h>
 #include <mpi.h>
 #include <assert.h>
-#include <ctype.h>
 #include <unistd.h> // TODO: delete
 
 #include "graph.h"
-#include "common.h"
+#include "utils.h"
 
 
 #define LOCAL_READ_BUF_SIZE 64
@@ -17,8 +16,8 @@
 #define MAX_NODE_ENCODING 2 * MAX_NUM_OF_NODES + 3
 #define MAX_PATTERN_NODES 10
 #define MAX_PATTERN_SIZE 1 + MAX_PATTERN_NODES * (2 + 2 * MAX_PATTERN_NODES)
-// Each process has 128MB for its nodes
-#define SIZE_AVAILABLE 128000000
+// Each process has 200MB for its nodes and edges
+#define SIZE_AVAILABLE 200000000
 #define ROOT 0
 
 
@@ -26,18 +25,6 @@ static const int NUM_NODES_TAG = MAX_NUM_OF_NODES + 1;
 static const int NODE_OUT_EDGES_TAG = MAX_NUM_OF_NODES + 2;
 static const int NODE_IN_EDGES_TAG = MAX_NUM_OF_NODES + 3;
 
-
-int isLineEmpty(const char *line)
-{
-    // Check if the string consists only of spaces
-    while (*line != '\0') {
-        if (isspace(*line) == 0) {
-            return 0;
-        }
-        line++;
-    }
-    return 1;
-}
 
 /*
  * Counts in/out degrees for each node. Called only in root.

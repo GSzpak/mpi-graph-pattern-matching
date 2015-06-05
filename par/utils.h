@@ -2,8 +2,8 @@
 // Created by Szymon Matejczyk on 21.05.15.
 //
 
-#ifndef MPI_ASSIGNMENT_SEQ_COMMON_H
-#define MPI_ASSIGNMENT_SEQ_COMMON_H
+#ifndef UTILS_H
+#define UTILS_H
 
 #ifdef DEBUG
 #define DEBUG_TEST 1
@@ -20,5 +20,6 @@
             do { if (DEBUG_TEST) fprintf(stderr, ##__VA_ARGS__); } while (0)
 
 void error(const char* errorMsgFormat, ...);
+int isLineEmpty(const char *line);
 
-#endif //MPI_ASSIGNMENT_SEQ_COMMON_H
+#endif //UTILS_H

@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include "graph.h"
-#include "common.h"
 
 
 Node *getNode(Graph *graph, int num)
@@ -109,3 +108,28 @@ void freeGraph(Graph *graph) {
     graph->numOfNodes = 0;
     graph->myPartNumOfNodes = 0;
 }
+/*
+int dfs(int node, int nextId, int parentNode, Graph* graph, Graph* reversed,
+        int* numbering, int* parent, int viaReverseEdge) {
+    int currentId = nextId;
+    if (viaReverseEdge) {
+        numbering[node] = -currentId;
+    } else {
+        numbering[node] = currentId;
+    }
+    parent[node] = parentNode;
+    for (int i = 0; i < graph->outDegrees[node]; i++) {
+        if (numbering[graph->edges[node][i]] == 0) {
+            currentId = dfs(graph->edges[node][i], currentId + 1, node, graph,
+                            reversed, numbering, parent, 0);
+        }
+    }
+    for (int i = 0; i < reversed->outDegrees[node]; i++) {
+        if (numbering[reversed->edges[node][i]] == 0) {
+            currentId = dfs(reversed->edges[node][i], currentId + 1, node, graph,
+                            reversed, numbering, parent, 1);
+        }
+    }
+    return currentId;
+}
+*/

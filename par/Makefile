@@ -1,8 +1,8 @@
 CC=mpicc
 FLAGS=-Wall
 
-HEADERS = common.h graph.h
-OBJECTS = common.o graph.o gpm-par.o
+HEADERS = utils.h graph.h
+OBJECTS = utils.o graph.o gpm-par.o
 
 default: gpm-par.exe
 
