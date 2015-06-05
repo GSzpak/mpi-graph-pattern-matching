@@ -16,7 +16,7 @@ void prepareGraph(Graph *graph)
     graph->procForNode = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
     memset(graph->nodesInGraph, 0, sizeof(int) * (graph->numOfNodes + 1));
     memset(graph->nodes, 0, sizeof(Node) * (graph->numOfNodes + 1));
-    memset(graph->procForNode, 0, sizeof(int) * (graph->numOfNodes + 1));
+    memset(graph->procForNode, -1, sizeof(int) * (graph->numOfNodes + 1));
     for (i = 1; i <= graph->numOfNodes; ++i) {
         graph->nodes[i].num = i;
     }
@@ -46,7 +46,7 @@ void printGraphDebug(Graph *graph)
         if (graph->nodesInGraph[i]) {
             printNodeDebug(&graph->nodes[i]);
         }
-        if (graph->procForNode[i] != 0) {
+        if (graph->procForNode[i] != -1) {
             printf("Node %d in process %d\n", i, graph->procForNode[i]);    
         }
     }

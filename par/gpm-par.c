@@ -23,7 +23,8 @@
 
 
 static const int NUM_NODES_TAG = MAX_NUM_OF_NODES + 1;
-static const int NODE_EDGES_TAG = MAX_NUM_OF_NODES + 2;
+static const int NODE_OUT_EDGES_TAG = MAX_NUM_OF_NODES + 2;
+static const int NODE_IN_EDGES_TAG = MAX_NUM_OF_NODES + 3;
 
 
 int isLineEmpty(const char *line)
@@ -202,7 +203,7 @@ void distributeGraph(FILE *inFile, Graph *graph, int *numOfNodesForProc,
             tempBuf[2 * i + 4] = graph->procForNode[actNeighbour];
         }
         MPI_Send(tempBuf, 2 * actOutDeg + 3, MPI_INT, actProc,
-            NODE_EDGES_TAG, MPI_COMM_WORLD);
+            NODE_OUT_EDGES_TAG, MPI_COMM_WORLD);
     }
     free(tempBuf);
     printf("Finish\n");
@@ -212,8 +213,8 @@ void distributeGraph(FILE *inFile, Graph *graph, int *numOfNodesForProc,
  * Count number of ingoing and outgoing messages while exchanging
  * information about ingoing edges
  */
-void countNumberOfMessages(int rank, Graph *graph, int *numOfSent,
-    int *numOfReceived, int *lastInIndex)
+void countNumberOfInOutSent(int rank, Graph *graph, int *sentToOtherProcs,
+    int numOfProcs, int *numOfSent, int *numOfReceived, int *lastInIndex)
 {
     int actNeighbour, procForNeighbour, actLastInIndex, i, j;
     Node *actNode;
@@ -233,12 +234,114 @@ void countNumberOfMessages(int rank, Graph *graph, int *numOfSent,
                     graph->nodes[actNeighbour].inEdges[actLastInIndex] = i;
                     lastInIndex[actNeighbour]++;
                 } else {
-                    (*numOfSent)++;
+                    sentToOtherProcs[procForNeighbour]++;
+                }
+            }
+        }
+    }
+    // Count number of messages sent to other processes
+    for (i = 0; i < numOfProcs; ++i) {
+        if (sentToOtherProcs[i] > 0) {
+            (*numOfSent)++;
+        }
+    }
+}
+
+/*
+ * Send edges, which end in other process, to this process
+ * Used in exchangeIngoingEdges
+ */
+void sendEdges(Graph * graph, int rank, int numOfProcs, int numOfSent,
+    int *sentToOtherProcs, MPI_Request *requests)
+{
+    int i, j, actRequest, actNeighbour, procForNeighbour, actLastBufIndex;
+    int *actBuffer;
+    Node *actNode;
+    // Buffers used to send edges to other processes
+    // Every edge will be sent as a pair (from, to)
+    int *otherProcsBufs[numOfProcs];
+    // Last indices in process buffers
+    int lastIndex[numOfProcs];
+
+    memset(lastIndex, 0, sizeof(lastIndex));
+    for (i = 0; i < numOfProcs; ++i) {
+        if (sentToOtherProcs[i] > 0) {
+            otherProcsBufs[i] = (int *) malloc(sizeof(int) * 2 * sentToOtherProcs[i]);
+            memset(otherProcsBufs[i], 0, sizeof(int) * 2 * sentToOtherProcs[i]);
+        } else {
+            otherProcsBufs[i] = NULL;
+        }
+    }
+
+    for (i = 1; i <= graph->numOfNodes; ++i) {
+        if (graph->nodesInGraph[i] == 1) {
+            actNode = &graph->nodes[i];
+            for (j = 0; j < actNode->outDegree; ++j) {
+                actNeighbour = actNode->outEdges[j];
+                procForNeighbour = graph->procForNode[actNeighbour];
+                if (rank != procForNeighbour) {
+                    actLastBufIndex = lastIndex[procForNeighbour];
+                    actBuffer = otherProcsBufs[procForNeighbour];
+                    // Use destination node as tag
+                    actBuffer[actLastBufIndex] = actNode->num;
+                    actBuffer[actLastBufIndex + 1] = actNeighbour;
+                    lastIndex[procForNeighbour] += 2;
                 }
             }
         }
     }
 
+    actRequest = 0;
+    for (i = 0; i < numOfProcs; ++i) {
+        if (sentToOtherProcs[i] > 0) {
+            MPI_Isend(otherProcsBufs[i], 2 * sentToOtherProcs[i], MPI_INT, i,
+                NODE_IN_EDGES_TAG, MPI_COMM_WORLD, requests + actRequest);
+            actRequest++;
+        } 
+    }
+        
+    assert(actRequest == numOfSent);
+
+    for (i = 0; i < numOfProcs; ++i) {
+        if (otherProcsBufs[i] != NULL) {
+            free(otherProcsBufs[i]);
+        }
+    }
+}
+
+/*
+ * Receive ingoing edges from other processes
+ * Used in exchangeIngoingEdges
+ */
+void receiveEdges(Graph *graph, int numOfReceived, int *lastInIndex)
+{
+    int i, remaining, actCount, actReceived, actSource, actDest, actSourceProc;
+    MPI_Status status;
+    // FIXME: assumes, that ingoing edges will fit into 128mb
+    int *edgesBuf = (int *) malloc(sizeof(int) * SIZE_AVAILABLE);
+    memset(edgesBuf, 0, sizeof(int) * SIZE_AVAILABLE);
+    
+    remaining = numOfReceived;
+    while (remaining > 0) {
+        // FIXME: SIZE_AVAILABLE
+        MPI_Recv(edgesBuf, SIZE_AVAILABLE, MPI_INT, MPI_ANY_SOURCE,
+            NODE_IN_EDGES_TAG, MPI_COMM_WORLD, &status);
+        MPI_Get_count(&status, MPI_INT, &actCount);
+        actSourceProc = status.MPI_SOURCE;
+        // Every edge is sent as pair (from, to)
+        assert(actCount % 2 == 0);
+        actReceived = actCount / 2;
+        for (i = 0; i < actReceived; ++i) {
+            actSource = edgesBuf[2 * i];
+            actDest = edgesBuf[2 * i + 1];
+            graph->nodes[actDest].inEdges[lastInIndex[actDest]] = actSource;
+            lastInIndex[actDest]++;
+            graph->procForNode[actSource] = actSourceProc;
+        }
+        remaining -= actReceived;
+    }
+    assert (remaining == 0);
+    free(edgesBuf);
 }
 
 /*
@@ -249,60 +352,38 @@ void countNumberOfMessages(int rank, Graph *graph, int *numOfSent,
  * Every process will receive number of messages equal to the number of
  * edges (v1 -> v2), where v2 is in p and v1 is not in p.
  */
-void exchangeIngoingEdges(int rank, Graph *graph)
+void exchangeIngoingEdges(int rank, int numOfProcs, Graph *graph)
 {
-    int numOfReceived, numOfSent, actNeighbour, procForNeighbour;
-    int actRequest, actNumOfReceived, i, j;
-    Node *actNode;
-
+    int numOfReceived, numOfSent;
+    // Counts number of edges sent to each other process
+    int sentToOtherProcs[numOfProcs];
     // First free index of inEdges array for every node
-    int *lastInIndex = (int *) malloc(sizeof(int) * (MAX_NUM_OF_NODES + 1));
-    memset(lastInIndex, 0, sizeof(int) * (MAX_NUM_OF_NODES + 1));
-
+    int *lastInIndex = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
+    
+    numOfSent = 0;    
     numOfReceived = 0;
-    numOfSent = 0;
-    countNumberOfMessages(rank, graph, &numOfSent, &numOfReceived,
-        lastInIndex);
+    memset(sentToOtherProcs, 0, sizeof(sentToOtherProcs));
+    memset(lastInIndex, 0, sizeof(int) * (graph->numOfNodes + 1));
 
-    MPI_Request requests[numOfReceived + numOfSent];
-    MPI_Status statuses[numOfReceived + numOfSent];
+    countNumberOfInOutSent(rank, graph, sentToOtherProcs, numOfProcs,
+        &numOfSent, &numOfReceived, lastInIndex);
 
-    actRequest = 0;
-    // Send and receive edges
-    for (i = 1; i <= graph->numOfNodes; ++i) {
-        if (graph->nodesInGraph[i] == 1) {
-            actNode = &graph->nodes[i];
-            // Send outgoing edges
-            for (j = 0; j < actNode->outDegree; ++j) {
-                actNeighbour = actNode->outEdges[j];
-                procForNeighbour = graph->procForNode[actNeighbour];
-                if (rank != procForNeighbour) {
-                    // Use destination node as tag
-                    MPI_Isend(&i, 1, MPI_INT, procForNeighbour,
-                        actNeighbour, MPI_COMM_WORLD, requests + actRequest);
-                    actRequest++;
-                }
-            }
-            // Receive ingoing edges
-            actNumOfReceived = actNode->inDegree - lastInIndex[i];
-            for (j = 0; j < actNumOfReceived; ++j) {
-                // As above, ingoing edges for node i are tagged with i
-                MPI_Irecv(actNode->inEdges + lastInIndex[i], 1, MPI_INT,
-                    MPI_ANY_SOURCE, i, MPI_COMM_WORLD, requests + actRequest);
-                actRequest++;
-                lastInIndex[i]++;
-            }
-        }
-    }
 
-    assert(actRequest == numOfReceived + numOfSent);
+    MPI_Request requests[numOfSent];
+    MPI_Status statuses[numOfSent];
+
+    sendEdges(graph, rank, numOfProcs, numOfSent, sentToOtherProcs, 
+        requests);
+    receiveEdges(graph, numOfReceived, lastInIndex);
+    
     free(lastInIndex);
-    MPI_Waitall(numOfReceived + numOfSent, requests, statuses);
+    
+    MPI_Waitall(numOfSent, requests, statuses);
 }
 
 // Called in workers
 // TODO: one comment style
-void receiveGraph(int rank, Graph *graph)
+void receiveGraph(int rank, int numOfProcs, Graph *graph)
 {
     int numOfNodes, actNodeNum, actOutDeg, actInDeg, actNeighbour, i, j;
     Node *actNode;
@@ -320,7 +401,7 @@ void receiveGraph(int rank, Graph *graph)
 
     for (i = 0; i < numOfNodes; ++i) {
         MPI_Recv(tempBuf, MAX_NODE_ENCODING, MPI_INT, ROOT,
-            NODE_EDGES_TAG, MPI_COMM_WORLD, &status);
+            NODE_OUT_EDGES_TAG, MPI_COMM_WORLD, &status);
         actNodeNum = tempBuf[0];
         actOutDeg = tempBuf[1];
         actInDeg = tempBuf[2];
@@ -339,7 +420,7 @@ void receiveGraph(int rank, Graph *graph)
         }
     }
     free(tempBuf);
-    exchangeIngoingEdges(rank, graph);
+    exchangeIngoingEdges(rank, numOfProcs, graph);
 }
 
 void readPattern(FILE *inFile, Graph *pattern)
@@ -482,7 +563,7 @@ int main(int argc, char **argv)
         MPI_Bcast(&graph.numOfNodes, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
         prepareGraph(&graph);
         printf("%d graph prepared\n", rank);
-        receiveGraph(rank, &graph);
+        receiveGraph(rank, numOfProcs, &graph);
         sleep(rank);        
         printf("%d graph received\n", rank);
         printf("\n");

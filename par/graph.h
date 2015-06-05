@@ -20,6 +20,7 @@ typedef struct {
     // nodesInGraph[i] == 1, when node i is in the graph,
     // and 0 otherwise
     int *nodesInGraph;
+    // FIXME: compress and add array of indices
     // Array of nodes
     // In worker - node i is at index i
     // In root - used to sort nodes by (inDegree + outDegree)
