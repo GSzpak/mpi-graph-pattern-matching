@@ -6,19 +6,31 @@
 #include "common.h"
 
 
-// TODO: move procForNode outside
-// FIXME: numOfNodes in workers
-void prepareGraph(Graph *graph)
+Node *getNode(Graph *graph, int num)
+{
+    int nodeIndex = graph->nodeIndex[num];
+    return &graph->nodes[nodeIndex];
+}
+
+int getNodeSize(Node *node)
+{
+    return sizeof(Node) + (node->inDegree + node->outDegree) * sizeof(int);
+}
+
+void prepareGraph(Graph *graph, int numOfNodes, int myPartNumOfNodes)
 {
     int i;
-    graph->nodesInGraph = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1)); 
-    graph->nodes = (Node *) malloc(sizeof(Node) * (graph->numOfNodes + 1));
+    graph->numOfNodes = numOfNodes;
+    graph->myPartNumOfNodes = myPartNumOfNodes;
+    graph->nodeIndex = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1)); 
+    memset(graph->nodeIndex, -1, sizeof(int) * (graph->numOfNodes + 1));
+    graph->nodes = (Node *) malloc(sizeof(Node) * graph->myPartNumOfNodes);
+    memset(graph->nodes, 0, sizeof(Node) * graph->myPartNumOfNodes);
     graph->procForNode = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
-    memset(graph->nodesInGraph, 0, sizeof(int) * (graph->numOfNodes + 1));
-    memset(graph->nodes, 0, sizeof(Node) * (graph->numOfNodes + 1));
     memset(graph->procForNode, -1, sizeof(int) * (graph->numOfNodes + 1));
-    for (i = 1; i <= graph->numOfNodes; ++i) {
-        graph->nodes[i].num = i;
+    for (i = 0; i < graph->myPartNumOfNodes; ++i) {
+        graph->nodes[i].inEdges = NULL;
+        graph->nodes[i].outEdges = NULL;
     }
 }
 
@@ -27,25 +39,31 @@ void printNodeDebug(Node *node)
     int i;
     printf("Node %d, outDegree %d, inDegree %d\n", 
         node->num, node->outDegree, node->inDegree);
-    printf("Out edges: ");
-    for (i = 0; i < node->outDegree; ++i) {
-        printf("%d ", node->outEdges[i]);
+    if (node->outEdges != NULL) {
+        printf("Out edges: ");
+        for (i = 0; i < node->outDegree; ++i) {
+            printf("%d ", node->outEdges[i]);
+        }
+        printf("\n");
     }
-    printf("\nIn edges: ");
-    for (i = 0; i < node->inDegree; ++i) {
-        printf("%d ", node->inEdges[i]);
+    if (node->inEdges != NULL) {
+        printf("In edges: ");
+        for (i = 0; i < node->inDegree; ++i) {
+            printf("%d ", node->inEdges[i]);
+        }    
+        printf("\n");
     }
-    printf("\n");
 }
 
 void printGraphDebug(Graph *graph)
 {
     int i;
-    printf("Number of nodes: %d\n", graph->numOfNodes);
+    printf("Overall number of nodes: %d\n", graph->numOfNodes);
+    printf("My number of nodes: %d\n", graph->myPartNumOfNodes);
+    for(i = 0; i < graph->myPartNumOfNodes; ++i) {
+        printNodeDebug(&graph->nodes[i]);
+    }
     for(i = 1; i <= graph->numOfNodes; ++i) {
-        if (graph->nodesInGraph[i]) {
-            printNodeDebug(&graph->nodes[i]);
-        }
         if (graph->procForNode[i] != -1) {
             printf("Node %d in process %d\n", i, graph->procForNode[i]);    
         }
@@ -64,16 +82,15 @@ void freeNode(Node *node) {
 
 void freeGraph(Graph *graph) {
     int i;
-    for(i = 0; i <= graph->numOfNodes; ++i) {
-        //if (graph->nodesInGraph[i] == 1) {
-            freeNode(&graph->nodes[i]);
-        //}
+    for(i = 0; i < graph->myPartNumOfNodes; ++i) {
+        freeNode(&graph->nodes[i]);
     }
-    free(graph->nodesInGraph);
+    free(graph->nodeIndex);
     free(graph->nodes);
-    free(graph->procForNode);
-    graph->nodesInGraph = NULL;
+    free(graph->procForNode);    
+    graph->nodeIndex = NULL;
     graph->nodes = NULL;
     graph->procForNode = NULL;
     graph->numOfNodes = 0;
+    graph->myPartNumOfNodes = 0;
 }

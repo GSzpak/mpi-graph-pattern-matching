@@ -17,22 +17,21 @@ typedef struct {
  */
 typedef struct {
     int numOfNodes;
-    // nodesInGraph[i] == 1, when node i is in the graph,
-    // and 0 otherwise
-    int *nodesInGraph;
-    // FIXME: compress and add array of indices
-    // Array of nodes
-    // In worker - node i is at index i
-    // In root - used to sort nodes by (inDegree + outDegree)
-    // to distribute nodes possibly evenly
-    // If node is not in graph, then its num == -1
+    // Number of nodes held by given worker
+    int myPartNumOfNodes;
+    // Index of node i in nodes array. Equal to -1, if node is not in graph
+    int *nodeIndex;
+    // Array of nodes. In root, node `i` is at index i - root does not
+    // have to use nodeIndex array
     Node *nodes;
     // Map node -> process
     int *procForNode;
 } Graph;
 
 
-void prepareGraph(Graph *graph);
+Node *getNode(Graph *graph, int num);
+int getNodeSize(Node *node);
+void prepareGraph(Graph *graph, int numOfNodes, int myPartNumOfNodes);
 void printNodeDebug(Node *node);
 void printGraphDebug(Graph *graph);
 void freeNode(Node *node);
