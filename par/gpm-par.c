@@ -571,12 +571,13 @@ int main(int argc, char **argv)
     if (rank == ROOT) {
         inFile = fopen(inFileName, "r");
         if (inFile == NULL) {
-            MPI_Finalize();
+            //MPI_Finalize(); TODO: is necessary?
             error("Can't open input file %s\n", inFileName);
         }
         outFile = fopen(outFileName, "w");
         if (outFile == NULL) {
-            error("Can't open output file.\n");
+            //MPI_Finalize(); TODO: is necessary?
+            error("Can't open output file.\n", outFileName);
         }
     }
 
@@ -609,7 +610,7 @@ int main(int argc, char **argv)
         receivePattern(&pattern);
         printf("%d pattern received\n", rank);
         printf("\n");
-        printGraphDebug(&pattern);
+        //printGraphDebug(&pattern);
     }
 
     // patternMatch()
