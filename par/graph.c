@@ -109,17 +109,7 @@ void freeGraph(Graph *graph) {
     graph->myPartNumOfNodes = 0;
 }
 
-void undirectedDfs(int source, Graph *graph, int *dfsOrder, int *parents)
-{
-    int *visited = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
-    memset(visited, 0, sizeof(int) * (graph->numOfNodes + 1));
-
-    runUndirectedDfs(source, -1, graph, visited, dfsOrder, 0, parents, 0);
-    
-    free(visited);
-}
-
-int runUndirectedDfs(int nodeNum, int parentNum, Graph *graph, int *visited,
+static int runUndirectedDfs(int nodeNum, int parentNum, Graph *graph, int *visited,
         int *dfsOrder, int orderIndex, int *parents, int viaInEdge)
 {
     int i, neighbourNum;
@@ -152,4 +142,14 @@ int runUndirectedDfs(int nodeNum, int parentNum, Graph *graph, int *visited,
     }
 
     return orderIndex;
+}
+
+void undirectedDfs(int source, Graph *graph, int *dfsOrder, int *parents)
+{
+    int *visited = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
+    memset(visited, 0, sizeof(int) * (graph->numOfNodes + 1));
+
+    runUndirectedDfs(source, -1, graph, visited, dfsOrder, 0, parents, 0);
+    
+    free(visited);
 }
