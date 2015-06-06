@@ -2,7 +2,7 @@
 #define GRAPH_H
 
 /**
- * Data structure for sorting nodes by sum of degrees
+ * Directed grapg node data structure
  */
 typedef struct {
     int num;
@@ -13,7 +13,7 @@ typedef struct {
 } Node;
 
 /**
- * Directed graph data structure.
+ * Directed graph data structure
  */
 typedef struct {
     int numOfNodes;
@@ -29,16 +29,17 @@ typedef struct {
 } Graph;
 
 
-Node *getNode(Graph *graph, int num);
-int getNodeSize(Node *node);
 /*
  * Compares nodes by (inDegree + outDegree)
  */
 int nodeComparator(const void *elem1, const void *elem2);
+Node *getNode(Graph *graph, int num);
+int getNodeSize(Node *node);
 void prepareGraph(Graph *graph, int numOfNodes, int myPartNumOfNodes);
 void printNodeDebug(Node *node);
 void printGraphDebug(Graph *graph);
 void freeNode(Node *node);
 void freeGraph(Graph *graph);
+void undirectedDfs(int source, Graph *graph, int *dfsOrder, int *parents);
 
 #endif //GRAPH_H

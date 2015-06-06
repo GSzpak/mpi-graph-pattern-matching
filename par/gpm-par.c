@@ -533,6 +533,22 @@ void receivePattern(Graph *pattern)
     }
 }
 
+
+
+
+
+void findPatternDfsOrdering(Graph *pattern, int **patternDfsOrder,
+    int **patternDfsParents)
+{
+    *patternDfsOrder = (int *) malloc(sizeof(int) * pattern->numOfNodes);
+    *patternDfsParents = (int *) malloc(sizeof(int) * (pattern->numOfNodes + 1));
+    memset(*patternDfsOrder, 0, sizeof(int) * pattern->numOfNodes);
+    memset(*patternDfsParents, 0, sizeof(int) * (pattern->numOfNodes + 1));
+    undirectedDfs(1, pattern, *patternDfsOrder, *patternDfsParents);
+}
+
+
+
 int main(int argc, char **argv)
 {
     if (argc != 3) {
@@ -550,6 +566,8 @@ int main(int argc, char **argv)
     // Array informing, how many nodes will be sent to each process
     // Used only in root
     int *numOfNodesForProc = NULL;
+    int *patternDfsOrder = NULL;
+    int *patternDfsParents = NULL;
 
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -590,14 +608,15 @@ int main(int argc, char **argv)
         receiveOutEdges(rank, numOfProcs, &graph);
         printf("%d out edges received\n", rank);
         exchangeInEdges(rank, numOfProcs, &graph);
-        sleep(rank);
         printf("%d graph received\n", rank);
         printf("\n");
         printGraphDebug(&graph);
         receivePattern(&pattern);
         printf("%d pattern received\n", rank);
         printf("\n");
-        //printGraphDebug(&pattern);
+        findPatternDfsOrdering(&pattern, &patternDfsOrder, &patternDfsParents);
+        printArray(patternDfsOrder, pattern.numOfNodes);
+        printArray(patternDfsParents, pattern.numOfNodes + 1);
     }
 
     // patternMatch()
@@ -605,9 +624,12 @@ int main(int argc, char **argv)
     if (rank == ROOT) {
         fclose(outFile);
         free(numOfNodesForProc);
-        printf("end\n");
+    } else {
+        free(patternDfsOrder);
+        free(patternDfsParents);
     }
 
+    printf("end\n");
     freeGraph(&graph);
     freeGraph(&pattern);
 

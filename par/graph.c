@@ -5,17 +5,6 @@
 #include "graph.h"
 
 
-Node *getNode(Graph *graph, int num)
-{
-    int nodeIndex = graph->nodeIndex[num];
-    return &graph->nodes[nodeIndex];
-}
-
-int getNodeSize(Node *node)
-{
-    return sizeof(Node) + (node->inDegree + node->outDegree) * sizeof(int);
-}
-
 int nodeComparator(const void *elem1, const void *elem2)
 {
     Node *node1 = (Node *) elem1;
@@ -29,6 +18,17 @@ int nodeComparator(const void *elem1, const void *elem2)
     } else {
         return -1;
     }
+}
+
+Node *getNode(Graph *graph, int num)
+{
+    int nodeIndex = graph->nodeIndex[num];
+    return &graph->nodes[nodeIndex];
+}
+
+int getNodeSize(Node *node)
+{
+    return sizeof(Node) + (node->inDegree + node->outDegree) * sizeof(int);
 }
 
 void prepareGraph(Graph *graph, int numOfNodes, int myPartNumOfNodes)
@@ -108,28 +108,48 @@ void freeGraph(Graph *graph) {
     graph->numOfNodes = 0;
     graph->myPartNumOfNodes = 0;
 }
-/*
-int dfs(int node, int nextId, int parentNode, Graph* graph, Graph* reversed,
-        int* numbering, int* parent, int viaReverseEdge) {
-    int currentId = nextId;
-    if (viaReverseEdge) {
-        numbering[node] = -currentId;
-    } else {
-        numbering[node] = currentId;
-    }
-    parent[node] = parentNode;
-    for (int i = 0; i < graph->outDegrees[node]; i++) {
-        if (numbering[graph->edges[node][i]] == 0) {
-            currentId = dfs(graph->edges[node][i], currentId + 1, node, graph,
-                            reversed, numbering, parent, 0);
-        }
-    }
-    for (int i = 0; i < reversed->outDegrees[node]; i++) {
-        if (numbering[reversed->edges[node][i]] == 0) {
-            currentId = dfs(reversed->edges[node][i], currentId + 1, node, graph,
-                            reversed, numbering, parent, 1);
-        }
-    }
-    return currentId;
+
+void undirectedDfs(int source, Graph *graph, int *dfsOrder, int *parents)
+{
+    int *visited = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
+    memset(visited, 0, sizeof(int) * (graph->numOfNodes + 1));
+
+    runUndirectedDfs(source, -1, graph, visited, dfsOrder, 0, parents, 0);
+    
+    free(visited);
 }
-*/
+
+int runUndirectedDfs(int nodeNum, int parentNum, Graph *graph, int *visited,
+        int *dfsOrder, int orderIndex, int *parents, int viaInEdge)
+{
+    int i, neighbourNum;
+    Node *actNode;
+
+    visited[nodeNum] = 1;
+    parents[nodeNum] = parentNum;
+
+    if (viaInEdge) {
+        dfsOrder[orderIndex] = -nodeNum;
+    } else {
+        dfsOrder[orderIndex] = nodeNum;
+    }
+
+    actNode = getNode(graph, nodeNum);
+
+    for (i = 0; i < actNode->outDegree; ++i) {
+        neighbourNum = actNode->outEdges[i];
+        if (!visited[neighbourNum]) {
+            orderIndex = runUndirectedDfs(neighbourNum, nodeNum, graph, visited,
+                dfsOrder, orderIndex + 1, parents, 0);
+        }
+    }
+    for (i = 0; i < actNode->inDegree; ++i) {
+        neighbourNum = actNode->inEdges[i];
+        if (!visited[neighbourNum]) {
+            orderIndex = runUndirectedDfs(neighbourNum, nodeNum, graph, visited,
+                dfsOrder, orderIndex + 1, parents, 1);
+        }
+    }
+
+    return orderIndex;
+}

@@ -21,5 +21,6 @@
 
 void error(const char* errorMsgFormat, ...);
 int isLineEmpty(const char *line);
+void printArray(int* arr, int len);
 
 #endif //UTILS_H
