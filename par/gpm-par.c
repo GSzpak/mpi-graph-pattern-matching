@@ -7,6 +7,7 @@
 
 #include "graph.h"
 #include "utils.h"
+#include "match.h"
 
 
 #define LOCAL_READ_BUF_SIZE 64
@@ -554,6 +555,94 @@ void findPatternDfsOrdering(Graph *pattern, int **patternDfsOrder,
     undirectedDfs(1, pattern, *patternDfsOrder, *patternDfsParents);
 }
 
+int nodeMatches(Node *graphNode, Node *patternNode, Match* match)
+{
+    // Return false, if current graph node is already matched
+    if (matchContains(match, graphNode->num)) {
+        return 0;
+    }
+
+    int i, actPatternDestNum, actPatternSourceNum;
+    int actGraphDestNum, actGraphSourceNum;
+
+    // Check out edges - every edge from the pattern must be in the graph
+    for (i = 0; i < patternNode->outDegree; ++i) {
+        actPatternDestNum = patternNode->outEdges[i];
+        actGraphDestNum = patternNumToGraphNum(match, actPatternDestNum);
+        if (actGraphDestNum > -1 &&
+            !containsOutEdge(graphNode, actGraphDestNum)) {
+            return 0;
+        }
+    }
+
+    // Check in edges
+    for (i = 0; i < patternNode->inDegree; ++i) {
+        actPatternSourceNum = patternNode->inEdges[i];
+        actGraphSourceNum = patternNumToGraphNum(match, actPatternSourceNum);
+        if (actGraphSourceNum > -1 &&
+            !containsInEdge(graphNode, actGraphSourceNum)) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+void exploreMatch(Graph* graph, Graph* pattern, Match *match, 
+    int* nodesMatchingOrder, int* patternParents,
+    Match *completedMatches, int* completedMatchesInd)
+{
+    if (match->matchedNodes == pattern->numOfNodes) {
+        memcpy(completedMatches + *completedMatchesInd, match, sizeof(Match));
+        (*completedMatchesInd)++;
+        return;
+    }
+
+    Node *parentInGraph;
+    Node *nextPatternNode;
+    Node *nextGraphNode;
+    int *edgesToCheck;
+    int nextPatternNodeNum, patternParentNum, parentInGraphNum, nextGraphNodeNum;
+    int numOfEdges, visitedViaInEdge, i;
+
+    nextPatternNodeNum = nodesMatchingOrder[match->matchedNodes + 1];
+    if (nextPatternNodeNum < 0) {
+        nextPatternNodeNum = -nextPatternNodeNum;
+        visitedViaInEdge = 1;
+    } else {
+        visitedViaInEdge = 0;
+    }
+    patternParentNum = patternParents[nextPatternNodeNum];
+    parentInGraphNum = patternNumToGraphNum(match, patternParentNum);
+
+    nextPatternNode = getNode(pattern, nextPatternNodeNum);
+    parentInGraph = getNode(graph, parentInGraphNum);
+
+    // For neighbors of parent we try to match the new node depending whether
+    // current node was visited by ingoing or outgoing edge in undirected dfs
+    if (visitedViaInEdge) {
+        edgesToCheck = parentInGraph->inEdges;
+        numOfEdges = parentInGraph->inDegree;
+    } else {
+        edgesToCheck = parentInGraph->outEdges;
+        numOfEdges = parentInGraph->outDegree;
+    }
+
+    for (i = 0; i < numOfEdges; ++i) {
+        nextGraphNodeNum = edgesToCheck[i];
+        // FIXME: check if neighbour is in process
+        // if not in graph: copy to local buffer, isend
+        nextGraphNode = getNode(graph, nextGraphNodeNum);
+
+        if (nodeMatches(nextGraphNode, nextPatternNode, match)) {
+            addNode(match, nextPatternNodeNum, nextGraphNodeNum);
+            exploreMatch(graph, pattern, match, nodesMatchingOrder, 
+                patternParents, completedMatches, completedMatchesInd);
+            removeNode(match, nextPatternNodeNum);
+        }
+    }
+}
+
 
 
 int main(int argc, char **argv)
@@ -561,6 +650,8 @@ int main(int argc, char **argv)
     if (argc != 3) {
         error("Wrong number of arguments.");
     }
+    
+    printf("%d\n", sizeof(Match));
 
     int rank;
     int numOfProcs;

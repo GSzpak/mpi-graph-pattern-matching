@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "graph.h"
+#include "utils.h"
 
 
 int nodeComparator(const void *elem1, const void *elem2)
@@ -18,6 +19,18 @@ int nodeComparator(const void *elem1, const void *elem2)
     } else {
         return -1;
     }
+}
+
+int containsOutEdge(Node *node, int destNodeNum)
+{
+    // Out edges are sorted by default
+    return binsearch(destNodeNum, node->outEdges, node->outDegree);
+}
+
+int containsInEdge(Node *node, int sourceNodeNum)
+{
+    // Every node sortes in edges immediately after receiving them
+    return binsearch(sourceNodeNum, node->inEdges, node->inDegree);
 }
 
 Node *getNode(Graph *graph, int num)

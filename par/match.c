@@ -1,19 +1,19 @@
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 
 #include "match.h"
 
 
-void prepareMatch(Match *match, int startingProcId)
+void prepareMatch(Match *match)
 {
-    match->startingProcId = startingProcId;
     match->matchedNodes = 0;
     memset(match->matches, -1, sizeof(match->matches));
 }
 
-int patternToGraphNode(Match* match, int node)
+int patternNumToGraphNum(Match* match, int patternNodeNum)
 {
-    return match->matches[node];
+    return match->matches[patternNodeNum];
 }
 
 int matchContains(Match* match, int node)
@@ -37,14 +37,14 @@ void printMatch(Match* match, FILE* out)
     fprintf(out, "\n");
 }
 
-Match addNode(Match* match, int graphNode, int patternNode)
+void addNode(Match* match, int patternNode, int graphNode)
 {
-    Match newMatch;
-    int i;
-    for (i = 0; i <= MAX_MATCH_SIZE; ++i) {
-        newMatch.matches[i] = match->matches[i];
-    }
-    newMatch.matches[patternNode] = graphNode;
-    newMatch.matchedNodes = match->matchedNodes + 1;
-    return newMatch;
+    match->matches[patternNode] = graphNode;
+    match->matchedNodes++;
+}
+
+void removeNode(Match* match, int patternNode)
+{
+    match->matches[patternNode] = -1;
+    match->matchedNodes--;
 }

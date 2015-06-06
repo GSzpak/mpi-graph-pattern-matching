@@ -33,6 +33,8 @@ typedef struct {
  * Compares nodes by (inDegree + outDegree)
  */
 int nodeComparator(const void *elem1, const void *elem2);
+int containsOutEdge(Node *node, int destNodeNum);
+int containsInEdge(Node *node, int sourceNodeNum);
 Node *getNode(Graph *graph, int num);
 int getNodeSize(Node *node);
 void prepareGraph(Graph *graph, int numOfNodes, int myPartNumOfNodes);
@@ -41,5 +43,6 @@ void printGraphDebug(Graph *graph);
 void freeNode(Node *node);
 void freeGraph(Graph *graph);
 void undirectedDfs(int source, Graph *graph, int *dfsOrder, int *parents);
+
 
 #endif //GRAPH_H
