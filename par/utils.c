@@ -39,3 +39,34 @@ void printArray(int* arr, int len)
     }
     printf("]\n");
 }
+
+int intComparator(const void *elem1, const void *elem2)
+{
+    int *x = (int *) elem1;
+    int *y = (int *) elem2;
+    if (*x > *y) {
+        return 1;
+    } else if (*x == *y) {
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
+int binsearch(int x, int *arr, int len)
+{
+    int left, right, mid;
+    left = 0;
+    right = len - 1;
+    while (left <= right) {
+        mid = (left + right) / 2;
+        if (arr[mid] == x) {
+            return 1;
+        } else if (arr[mid] < x) {
+            left = mid + 1;            
+        } else {
+            right = mid - 1;
+        }
+    }
+    return 0;
+}

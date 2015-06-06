@@ -105,6 +105,7 @@ void assignNodeToProc(Graph *graph, int numOfProcs,
     for (i = 0; i < numOfProcs; ++i) {
         remainingSpace[i] = SIZE_AVAILABLE;
     }
+
     qsort(nodesCopy, graph->numOfNodes, sizeof(Node), nodeComparator);
 
     i = graph->numOfNodes - 1;
@@ -398,6 +399,12 @@ void receiveEdges(Graph *graph, int numOfReceived, int *lastInIndex)
     }
     assert (remaining == 0);
     free(edgesBuf);
+    // Process sorts in edges in every node
+    // Out edges are sorted by default
+    for (i = 0; i < graph->myPartNumOfNodes; ++i) {
+        actNode = &graph->nodes[i];
+        qsort(actNode->inEdges, actNode->inDegree, sizeof(int), intComparator);
+    }
 }
 
 /*
