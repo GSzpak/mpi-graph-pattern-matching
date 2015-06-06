@@ -1,10 +1,8 @@
-//
-// Created by Szymon Matejczyk on 21.05.15.
-//
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <mpi.h>
 
 #include "utils.h"
 
@@ -15,6 +13,7 @@ void error(const char* errorMsgFormat, ...)
     vfprintf(stderr, errorMsgFormat, argptr);
     fflush(stderr);
     va_end(argptr);
+    MPI_Finalize();
     exit(-1);
 }
 

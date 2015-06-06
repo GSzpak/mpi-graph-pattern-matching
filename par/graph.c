@@ -166,3 +166,8 @@ void undirectedDfs(int source, Graph *graph, int *dfsOrder, int *parents)
     
     free(visited);
 }
+
+int isInGraph(Graph *graph, int nodeNum)
+{
+    return graph->nodeIndex[nodeNum] > -1 ? 1 : 0;
+}

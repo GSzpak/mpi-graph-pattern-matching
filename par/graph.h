@@ -43,6 +43,7 @@ void printGraphDebug(Graph *graph);
 void freeNode(Node *node);
 void freeGraph(Graph *graph);
 void undirectedDfs(int source, Graph *graph, int *dfsOrder, int *parents);
+int isInGraph(Graph *graph, int nodeNum);
 
 
 #endif //GRAPH_H

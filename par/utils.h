@@ -1,7 +1,3 @@
-//
-// Created by Szymon Matejczyk on 21.05.15.
-//
-
 #ifndef UTILS_H
 #define UTILS_H
 

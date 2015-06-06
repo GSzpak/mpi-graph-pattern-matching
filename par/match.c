@@ -1,13 +1,34 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <stddef.h>
+#include <mpi.h>
 
 #include "match.h"
 
+/*
+ * Creates datatype for struct Match
+ */
+void createMPIMatchDatatype(MPI_Datatype *match)
+{
+    int blocklengths[4] = {1, 1, 1, MAX_MATCH_SIZE + 1};
+    MPI_Datatype types[4] = {MPI_INT, MPI_INT, MPI_INT, MPI_INT};
+    MPI_Aint offsets[4] = {
+        offsetof(Match, matchedNodes),
+        offsetof(Match, nextGraphNode),
+        offsetof(Match, nextPatternNode),
+        offsetof(Match, matches),
+    };
+
+    MPI_Type_create_struct(4, blocklengths, offsets, types, match);
+    MPI_Type_commit(match);
+}
 
 void prepareMatch(Match *match)
 {
     match->matchedNodes = 0;
+    match->nextGraphNode = -1;
+    match->nextPatternNode = -1;
     memset(match->matches, -1, sizeof(match->matches));
 }
 
