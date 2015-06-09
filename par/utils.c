@@ -29,12 +29,12 @@ int isLineEmpty(const char *line)
     return 1;
 }
 
-void printArray(int* arr, int len)
+void printArrayDebug(int* arr, int len)
 {
     int i;
     printf("[%d", arr[0]);
     for (i = 1; i < len; ++i) {
-        printf("\t%d", arr[i]);
+        printf(" %d", arr[i]);
     }
     printf("]\n");
 }

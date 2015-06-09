@@ -310,11 +310,57 @@ void countNumberOfInOutSent(int rank, Graph *graph, int *sentToOtherProcs,
 }
 
 /*
+ * Receive ingoing edges from other processes
+ * Used in exchangeIngoingEdges function
+ */
+void receiveInEdges(int rank, Graph *graph, int numOfReceived, int *lastInIndex)
+{
+    int i, remaining, actCount, actReceived, actSource, actDest, actSourceProc;
+    int maxInEdgesSize;
+    MPI_Status status;
+    Node *actNode;
+    int *edgesBuf;
+
+    maxInEdgesSize = sizeof(int) * 2 * MAX_NUM_OF_NODES;
+    edgesBuf = (int *) malloc(maxInEdgesSize);
+    memset(edgesBuf, 0, maxInEdgesSize);
+    
+    remaining = numOfReceived;
+    while (remaining > 0) {
+        MPI_Recv(edgesBuf, maxInEdgesSize, MPI_INT, MPI_ANY_SOURCE,
+            NODE_IN_EDGES_TAG, MPI_COMM_WORLD, &status);
+        MPI_Get_count(&status, MPI_INT, &actCount);
+        actSourceProc = status.MPI_SOURCE;
+        // Every edge is sent as pair (from, to)
+        assert(actCount % 2 == 0);
+        actReceived = actCount / 2;
+        for (i = 0; i < actReceived; ++i) {
+            actSource = edgesBuf[2 * i];
+            actDest = edgesBuf[2 * i + 1];
+            actNode = getNode(graph, actDest);
+            actNode->inEdges[lastInIndex[actDest]] = actSource;
+            lastInIndex[actDest]++;
+            graph->procForNode[actSource] = actSourceProc;
+        }
+        remaining -= actReceived;
+    }
+    assert (remaining == 0);
+    free(edgesBuf);
+    // Process sorts in edges in every node
+    // Out edges are sorted by default
+    for (i = 0; i < graph->myPartNumOfNodes; ++i) {
+        actNode = &graph->nodes[i];
+        qsort(actNode->inEdges, actNode->inDegree, sizeof(int), intComparator);
+    }
+}
+
+/*
  * Send edges, which end in other process, to this process
  * Used in exchangeIngoingEdges function
  */
-void sendEdges(Graph * graph, int rank, int numOfProcs, int numOfSent,
-    int *sentToOtherProcs, MPI_Request *requests)
+void sendAndReceiveEdges(Graph * graph, int rank, int numOfProcs, int numOfSent,
+    int numOfReceived, int *sentToOtherProcs, MPI_Request *requests,
+    int *lastInIndex)
 {
     int i, j, actRequest, actNeighbour, procForNeighbour, actLastBufIndex;
     int *actBuffer;
@@ -361,7 +407,9 @@ void sendEdges(Graph * graph, int rank, int numOfProcs, int numOfSent,
     }
         
     assert(actRequest == numOfSent);
-
+    receiveInEdges(rank, graph, numOfReceived, lastInIndex);
+    MPI_Waitall(numOfSent, requests, MPI_STATUSES_IGNORE);
+    
     for (i = 0; i < numOfProcs; ++i) {
         if (otherProcsBufs[i] != NULL) {
             free(otherProcsBufs[i]);
@@ -369,48 +417,7 @@ void sendEdges(Graph * graph, int rank, int numOfProcs, int numOfSent,
     }
 }
 
-/*
- * Receive ingoing edges from other processes
- * Used in exchangeIngoingEdges function
- */
-void receiveEdges(Graph *graph, int numOfReceived, int *lastInIndex)
-{
-    int i, remaining, actCount, actReceived, actSource, actDest, actSourceProc;
-    MPI_Status status;
-    Node *actNode;
-    // FIXME: assumes, that ingoing edges will fit into 128mb
-    int *edgesBuf = (int *) malloc(sizeof(int) * SIZE_AVAILABLE);
-    memset(edgesBuf, 0, sizeof(int) * SIZE_AVAILABLE);
-    
-    remaining = numOfReceived;
-    while (remaining > 0) {
-        // FIXME: SIZE_AVAILABLE
-        MPI_Recv(edgesBuf, SIZE_AVAILABLE, MPI_INT, MPI_ANY_SOURCE,
-            NODE_IN_EDGES_TAG, MPI_COMM_WORLD, &status);
-        MPI_Get_count(&status, MPI_INT, &actCount);
-        actSourceProc = status.MPI_SOURCE;
-        // Every edge is sent as pair (from, to)
-        assert(actCount % 2 == 0);
-        actReceived = actCount / 2;
-        for (i = 0; i < actReceived; ++i) {
-            actSource = edgesBuf[2 * i];
-            actDest = edgesBuf[2 * i + 1];
-            actNode = getNode(graph, actDest);
-            actNode->inEdges[lastInIndex[actDest]] = actSource;
-            lastInIndex[actDest]++;
-            graph->procForNode[actSource] = actSourceProc;
-        }
-        remaining -= actReceived;
-    }
-    assert (remaining == 0);
-    free(edgesBuf);
-    // Process sorts in edges in every node
-    // Out edges are sorted by default
-    for (i = 0; i < graph->myPartNumOfNodes; ++i) {
-        actNode = &graph->nodes[i];
-        qsort(actNode->inEdges, actNode->inDegree, sizeof(int), intComparator);
-    }
-}
+
 
 /*
  * After receiving their nodes, workers exchange information about
@@ -436,17 +443,12 @@ void exchangeInEdges(int rank, int numOfProcs, Graph *graph)
     countNumberOfInOutSent(rank, graph, sentToOtherProcs, numOfProcs,
         &numOfSent, &numOfReceived, lastInIndex);
 
-
     MPI_Request requests[numOfSent];
-    MPI_Status statuses[numOfSent];
 
-    sendEdges(graph, rank, numOfProcs, numOfSent, sentToOtherProcs, 
-        requests);
-    receiveEdges(graph, numOfReceived, lastInIndex);
-    
+    sendAndReceiveEdges(graph, rank, numOfProcs, numOfSent, numOfReceived,
+        sentToOtherProcs, requests, lastInIndex);
+
     free(lastInIndex);
-    
-    MPI_Waitall(numOfSent, requests, statuses);
 }
 
 void readPattern(FILE *inFile, Graph *pattern)
@@ -804,6 +806,7 @@ void receiveMatches(FILE *outFile, int numOfProcs, MPI_Datatype mpiMatchType,
                     MATCH_TAG, MPI_COMM_WORLD, &status);
                 assert(receivedMatch.matchedNodes == pattern->numOfNodes);
                 printMatch(&receivedMatch, outFile);
+                printMatch(&receivedMatch, stdout);
                 fflush(outFile);
                 break;
             case FINISHED_TAG:
@@ -825,10 +828,6 @@ void receiveMatches(FILE *outFile, int numOfProcs, MPI_Datatype mpiMatchType,
             default:
                 // This should never happen
                 break;
-        }
-        if (status.MPI_TAG == PACKAGE_SENT_TAG ||
-            status.MPI_TAG == PACKAGE_PROCESSED_TAG) {
-            //printf("Received from %d, packages in progress %d\n", status.MPI_SOURCE, processedPackages);   
         }
         //printf("RECEIVED %d\n", status.MPI_TAG);        
         if ((producingProcs == 0) && (processedPackages == 0)) {
@@ -908,14 +907,13 @@ int main(int argc, char **argv)
         //printf("%d graph prepared\n", rank);
         receiveOutEdges(rank, numOfProcs, &graph);
         //printf("%d out edges received\n", rank);
+        //sleep(rank);
+        //printGraphDebug(&graph);
         exchangeInEdges(rank, numOfProcs, &graph);
-        /*
-        sleep(rank);
+        //sleep(rank);
         printf("%d graph received\n", rank);
-        printGraphDebug(&graph);
-        printf("\n");
-        sleep(rank);
-        */
+        //printGraphDebug(&graph);
+        //sleep(rank);
         receivePattern(&pattern);
         //printf("%d pattern received\n", rank);
         //printf("\n");
