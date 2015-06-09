@@ -267,6 +267,7 @@ void receiveOutEdges(int rank, int numOfProcs, Graph *graph)
             actNode->outEdges[j] = actNeighbour;
             graph->procForNode[actNeighbour] = tempBuf[2 * j + 4];
         }
+        qsort(actNode->outEdges, actNode->outDegree, sizeof(int), intComparator);
     }
     free(tempBuf);
 }
@@ -806,7 +807,7 @@ void receiveMatches(FILE *outFile, int numOfProcs, MPI_Datatype mpiMatchType,
                     MATCH_TAG, MPI_COMM_WORLD, &status);
                 assert(receivedMatch.matchedNodes == pattern->numOfNodes);
                 printMatch(&receivedMatch, outFile);
-                printMatch(&receivedMatch, stdout);
+                //printMatch(&receivedMatch, stdout);
                 fflush(outFile);
                 break;
             case FINISHED_TAG:
@@ -911,7 +912,7 @@ int main(int argc, char **argv)
         //printGraphDebug(&graph);
         exchangeInEdges(rank, numOfProcs, &graph);
         //sleep(rank);
-        printf("%d graph received\n", rank);
+        //printf("%d graph received\n", rank);
         //printGraphDebug(&graph);
         //sleep(rank);
         receivePattern(&pattern);
