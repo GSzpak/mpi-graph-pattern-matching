@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "graph.h"
 #include "utils.h"
@@ -36,6 +37,7 @@ int containsInEdge(Node *node, int sourceNodeNum)
 Node *getNode(Graph *graph, int num)
 {
     int nodeIndex = graph->nodeIndex[num];
+    assert(nodeIndex >= 0);
     return &graph->nodes[nodeIndex];
 }
 
