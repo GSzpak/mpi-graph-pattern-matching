@@ -51,7 +51,7 @@ void prepareGraph(Graph *graph, int numOfNodes, int myPartNumOfNodes)
     int i;
     graph->numOfNodes = numOfNodes;
     graph->myPartNumOfNodes = myPartNumOfNodes;
-    graph->nodeIndex = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1)); 
+    graph->nodeIndex = (int *) malloc(sizeof(int) * (graph->numOfNodes + 1));
     memset(graph->nodeIndex, -1, sizeof(int) * (graph->numOfNodes + 1));
     graph->nodes = (Node *) malloc(sizeof(Node) * graph->myPartNumOfNodes);
     memset(graph->nodes, 0, sizeof(Node) * graph->myPartNumOfNodes);
@@ -66,7 +66,7 @@ void prepareGraph(Graph *graph, int numOfNodes, int myPartNumOfNodes)
 void printNodeDebug(Node *node)
 {
     int i;
-    printf("Node %d, outDegree %d, inDegree %d\n", 
+    printf("Node %d, outDegree %d, inDegree %d\n",
         node->num, node->outDegree, node->inDegree);
     if (node->outEdges != NULL) {
         printf("Out edges: ");
@@ -79,7 +79,7 @@ void printNodeDebug(Node *node)
         printf("In edges: ");
         for (i = 0; i < node->inDegree; ++i) {
             printf("%d ", node->inEdges[i]);
-        }    
+        }
         printf("\n");
     }
 }
@@ -94,7 +94,7 @@ void printGraphDebug(Graph *graph)
     }
     for(i = 1; i <= graph->numOfNodes; ++i) {
         if (graph->procForNode[i] != -1) {
-            printf("Node %d in process %d\n", i, graph->procForNode[i]);    
+            printf("Node %d in process %d\n", i, graph->procForNode[i]);
         }
     }
 }
@@ -116,7 +116,7 @@ void freeGraph(Graph *graph) {
     }
     free(graph->nodeIndex);
     free(graph->nodes);
-    free(graph->procForNode);    
+    free(graph->procForNode);
     graph->nodeIndex = NULL;
     graph->nodes = NULL;
     graph->procForNode = NULL;
@@ -165,7 +165,7 @@ void undirectedDfs(int source, Graph *graph, int *dfsOrder, int *parents)
     memset(visited, 0, sizeof(int) * (graph->numOfNodes + 1));
 
     runUndirectedDfs(source, -1, graph, visited, dfsOrder, 0, parents, 0);
-    
+
     free(visited);
 }
 
