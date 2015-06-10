@@ -44,6 +44,8 @@ void freeNode(Node *node);
 void freeGraph(Graph *graph);
 void undirectedDfs(int source, Graph *graph, int *dfsOrder, int *parents);
 int isInGraph(Graph *graph, int nodeNum);
-
+void copyNodeToBuffer(Graph *graph, int nodeNum, int *buffer, int *bufIndex);
+void readReceivedNode(Node *node, int nodeNum, int *nodeBuffer,
+    int *bufferActIndex);
 
 #endif //GRAPH_H

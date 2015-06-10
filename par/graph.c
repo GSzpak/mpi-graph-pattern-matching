@@ -173,3 +173,37 @@ int isInGraph(Graph *graph, int nodeNum)
 {
     return graph->nodeIndex[nodeNum] > -1 ? 1 : 0;
 }
+
+void copyNodeToBuffer(Graph *graph, int nodeNum, int *buffer, int *bufIndex)
+{
+    int i;
+    Node *actNode;
+
+    actNode = getNode(graph, nodeNum);
+    buffer[(*bufIndex)++] = actNode->outDegree;
+    buffer[(*bufIndex)++] = actNode->inDegree;
+    for (i = 0; i < actNode->outDegree; ++i) {
+        buffer[(*bufIndex)++] = actNode->outEdges[i];
+    }
+    for (i = 0; i < actNode->inDegree; ++i) {
+        buffer[(*bufIndex)++] = actNode->inEdges[i];
+    }
+}
+
+void readReceivedNode(Node *node, int nodeNum, int *nodeBuffer,
+    int *bufferActIndex)
+{
+    int i;
+    
+    node->num = nodeNum;
+    node->outDegree = nodeBuffer[(*bufferActIndex)++];
+    node->inDegree = nodeBuffer[(*bufferActIndex)++];
+    node->outEdges = (int *) malloc(sizeof(int) * node->outDegree);
+    node->inEdges = (int *) malloc(sizeof(int) * node->inDegree);
+    for (i = 0; i < node->outDegree; ++i) {
+        node->outEdges[i] = nodeBuffer[(*bufferActIndex)++];
+    }
+    for (i = 0; i < node->inDegree; ++i) {
+        node->inEdges[i] = nodeBuffer[(*bufferActIndex)++];
+    }
+}
