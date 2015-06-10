@@ -12,8 +12,8 @@
 
 #define LOCAL_READ_BUF_SIZE 64
 #define MAX_NUM_OF_NODES 10000000
-// Macro used in graph distribution
-// Check distributeGraph function for more information
+// Maximum node encoding size
+// Node is encoded as follows: num, outDegree, inDegree, outEdges, inEdges
 #define MAX_NODE_ENCODING 2 * MAX_NUM_OF_NODES + 3
 #define MAX_PATTERN_NODES 10
 // Maximum pattern encoding size
@@ -620,9 +620,6 @@ int isMessageAvailable(int rank, int tag)
         }
     }
 
-    MPI_Iprobe(MPI_ANY_SOURCE, tag, MPI_COMM_WORLD,
-        &isAvailable, &status);
-
     if (isAvailable && status.MPI_SOURCE > rank) {
         return 1;
     }
@@ -690,6 +687,23 @@ Node *getNextParent(Graph *graph, Match *match, int *nodesMatchingOrder,
     return getNode(graph, parentInGraphNum);
 }
 
+void handlePendingRequests(Graph *graph)
+{
+    int isAvailable;
+    int *tempBuf;
+
+    tempBuf = (int *) malloc(sizeof(int) * MAX_NODE_ENCODING);
+    
+    MPI_Iprobe(MPI_ANY_SOURCE, NODE_REQ_TAG, MPI_COMM_WORLD,
+        &isAvailable, &status);
+    while (isAvailable) {
+        handleNodeRequest(status, graph, tempBuf);
+        MPI_Iprobe(MPI_ANY_SOURCE, NODE_REQ_TAG, MPI_COMM_WORLD,
+            &isAvailable, &status);
+    }
+    free(tempBuf);
+}
+
 void exploreMatch(int rank, Graph* graph, Graph* pattern, Match *match,
     int *nodesMatchingOrder, int *patternParents, Node *parentInGraph)
 {
@@ -705,7 +719,8 @@ void exploreMatch(int rank, Graph* graph, Graph* pattern, Match *match,
             patternParents);
     }
     */
-
+    handlePendingRequests(graph);
+        
     if (match->matchedNodes == pattern->numOfNodes) {
         //printf ("%d match found ", rank);
         //printMatch(match, stdout);
