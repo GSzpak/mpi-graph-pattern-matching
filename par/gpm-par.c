@@ -28,8 +28,8 @@
 #define NODE_IN_EDGES_TAG 53
 #define MATCH_TAG 54
 #define FINISHED_TAG 55
-#define PACKAGE_SENT_TAG 56
-#define PACKAGE_PROCESSED_TAG 57
+#define NODE_REQ_TAG 56
+#define NODE_RESP_TAG 57
 #define TERMINATE_TAG 58
 
 
@@ -483,6 +483,22 @@ void readPattern(FILE *inFile, Graph *pattern)
     }
 }
 
+void copyNodeToBuffer(Graph *graph, int nodeNum, int *buffer, int *bufIndex)
+{
+    int i;
+    Node *actNode;
+
+    actNode = getNode(graph, nodeNum);
+    buffer[(*bufIndex)++] = actNode->outDegree;
+    buffer[(*bufIndex)++] = actNode->inDegree;
+    for (i = 0; i < actNode->outDegree; ++i) {
+        buffer[(*bufIndex)++] = actNode->outEdges[i];
+    }
+    for (i = 0; i < actNode->inDegree; ++i) {
+        buffer[(*bufIndex)++] = actNode->inEdges[i];
+    }
+}
+
 /*
  * Pattern will be encoded in a following way:
  * number of nodes, then for every node:
@@ -491,8 +507,7 @@ void readPattern(FILE *inFile, Graph *pattern)
  */
 void broadcastPattern(Graph *pattern)
 {
-    int actIndex, node, i;
-    Node *actNode;
+    int actIndex, node;
     int buf[MAX_PATTERN_SIZE];
 
     memset(buf, 0, sizeof(buf));
@@ -500,21 +515,27 @@ void broadcastPattern(Graph *pattern)
 
     actIndex = 1;
     for (node = 1; node <= pattern->numOfNodes; ++node) {
-        actNode = getNode(pattern, node);
-        buf[actIndex] = actNode->outDegree;
-        actIndex++;
-        buf[actIndex] = actNode->inDegree;
-        actIndex++;
-        for (i = 0; i < actNode->outDegree; ++i) {
-            buf[actIndex] = actNode->outEdges[i];
-            actIndex++;
-        }
-        for (i = 0; i < actNode->inDegree; ++i) {
-            buf[actIndex] = actNode->inEdges[i];
-            actIndex++;
-        }
+        copyNodeToBuffer(pattern, node, buf, &actIndex);
     }
     MPI_Bcast(buf, MAX_PATTERN_SIZE, MPI_INT, ROOT, MPI_COMM_WORLD);
+}
+
+void readReceivedNode(Node *node, int nodeNum, int *nodeBuffer,
+    int *bufferActIndex)
+{
+    int i;
+    
+    node->num = nodeNum;
+    node->outDegree = nodeBuffer[(*bufferActIndex)++];
+    node->inDegree = nodeBuffer[(*bufferActIndex)++];
+    node->outEdges = (int *) malloc(sizeof(int) * node->outDegree);
+    node->inEdges = (int *) malloc(sizeof(int) * node->inDegree);
+    for (i = 0; i < node->outDegree; ++i) {
+        node->outEdges[i] = nodeBuffer[(*bufferActIndex)++];
+    }
+    for (i = 0; i < node->inDegree; ++i) {
+        node->inEdges[i] = nodeBuffer[(*bufferActIndex)++];
+    }
 }
 
 /*
@@ -522,7 +543,7 @@ void broadcastPattern(Graph *pattern)
  */
 void receivePattern(Graph *pattern)
 {
-    int numOfNodes, node, i, actIndex;
+    int numOfNodes, node, actIndex;
     Node *actNode;
     int buf[MAX_PATTERN_SIZE];
 
@@ -534,20 +555,7 @@ void receivePattern(Graph *pattern)
         pattern->nodeIndex[node] = node - 1;
         actNode = getNode(pattern, node);
         actNode->num = node;
-        actNode->outDegree = buf[actIndex];
-        actIndex++;
-        actNode->inDegree = buf[actIndex];
-        actIndex++;
-        actNode->outEdges = (int *) malloc(sizeof(int) * actNode->outDegree);
-        actNode->inEdges = (int *) malloc(sizeof(int) * actNode->inDegree);
-        for (i = 0; i < actNode->outDegree; ++i) {
-            actNode->outEdges[i] = buf[actIndex];
-            actIndex++;
-        }
-        for (i = 0; i < actNode->inDegree; ++i) {
-            actNode->inEdges[i] = buf[actIndex];
-            actIndex++;
-        }
+        readReceivedNode(actNode, node, buf, &actIndex);
     }
 }
 
@@ -598,6 +606,7 @@ int nodeMatches(Node *graphNode, Node *patternNode, Match* match)
     return 1;
 }
 
+// FIXME: remove
 int isMessageAvailable(int rank, int tag)
 {
     int actTag, isAvailable;
@@ -621,84 +630,81 @@ int isMessageAvailable(int rank, int tag)
     return 0;
 }
 
-void exploreMatch(int rank, Graph* graph, Graph* pattern, Match *match,
-    int *nodesMatchingOrder, int *patternParents);
-
-void exploreReceivedMatch(int rank, int tag, Graph* graph, Graph* pattern,
-    int *nodesMatchingOrder, int *patternParents)
+void handleNodeRequest(MPI_Status *status, Graph *graph, int *buffer)
 {
-    Match receivedMatch;
-    Node *nextPatternNode;
-    Node *nextGraphNode;
+    int requestedNode, bufIndex;
+
+    assert(status->MPI_TAG == NODE_REQ_TAG);
+    MPI_Recv(&requestedNode, 1, MPI_INT, MPI_ANY_SOURCE,
+        NODE_REQ_TAG, MPI_COMM_WORLD, status);
+    bufIndex = 0;
+    copyNodeToBuffer(graph, requestedNode, buffer, &bufIndex);
+    MPI_Send(buffer, bufIndex, MPI_INT, status->MPI_SOURCE,
+        NODE_RESP_TAG, MPI_COMM_WORLD);
+}
+
+void askForNode(Graph *graph, int nodeNum, Node *nextNode)
+{
+    int procForNode, responseReceived, bufIndex;
+    int *tempBuf;
+    MPI_Request request;
     MPI_Status status;
 
-    MPI_Recv(&receivedMatch, 1, mpiMatchType, MPI_ANY_SOURCE,
-        tag, MPI_COMM_WORLD, &status);
-    //printf("%d from %d\n", rank, status.MPI_SOURCE);
-    /*
-    printf("rank %d received next graph %d next pattern %d match ",
-        rank, receivedMatch.nextGraphNode, receivedMatch.nextPatternNode);
-    printMatch(&receivedMatch, stdout);
-    */
+    procForNode = graph->procForNode[nodeNum];
+    tempBuf = (int *) malloc(sizeof(int) * MAX_NODE_ENCODING);
 
-    if (receivedMatch.nextPatternNode != -1 && receivedMatch.nextGraphNode != -1) {
-        nextPatternNode = getNode(pattern, receivedMatch.nextPatternNode);
-        nextGraphNode = getNode(graph, receivedMatch.nextGraphNode);
-        if (nodeMatches(nextGraphNode, nextPatternNode, &receivedMatch)) {
-            addNode(&receivedMatch, receivedMatch.nextPatternNode,
-                receivedMatch.nextGraphNode);
-            exploreMatch(rank, graph, pattern, &receivedMatch,
-                nodesMatchingOrder, patternParents);
+    printf("Asking %d for %d\n", procForNode, nodeNum);
+    MPI_Isend(&nodeNum, 1, MPI_INT, procForNode, NODE_REQ_TAG,
+        MPI_COMM_WORLD, &request);
+    
+    responseReceived = 0;
+    while (!responseReceived) {
+        MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+        if (status.MPI_TAG == NODE_RESP_TAG) {
+            MPI_Recv(tempBuf, MAX_NODE_ENCODING, MPI_INT,
+                status.MPI_SOURCE, NODE_RESP_TAG, MPI_COMM_WORLD, &status);
+            readReceivedNode(nextNode, nodeNum, tempBuf, &bufIndex);
+            responseReceived = 1;
+            bufIndex = 0;
+        } else {
+            handleNodeRequest(&status, graph, tempBuf);            
         }
-    } else {
-        exploreMatch(rank, graph, pattern, &receivedMatch,
-            nodesMatchingOrder, patternParents);
     }
-    MPI_Ssend(NULL, 0, MPI_BYTE, ROOT, PACKAGE_PROCESSED_TAG, MPI_COMM_WORLD);
+
+    free(tempBuf);
 }
 
-void sendToProcWithNode(Graph *graph, Graph *pattern, int nodeNum,
-    Match *match, int nextGraphNodeNum, int nextPatternNodeNum, int rank,
-    int *nodesMatchingOrder, int *patternParents)
+// FIXME: unused
+Node *getNextParent(Graph *graph, Match *match, int *nodesMatchingOrder,
+    int *patternParents)
 {
-    int sendCompleted, procForNode;
-    MPI_Request matchRequest;
-
-    procForNode = graph->procForNode[nodeNum];
-    /*
-    printf("rank %d sends to %d match ", rank, procForNode);
-    printMatch(match, stdout);
-    */
-    match->nextGraphNode = nextGraphNodeNum;
-    match->nextPatternNode = nextPatternNodeNum;
-
-    MPI_Ssend(NULL, 0, MPI_BYTE, ROOT, PACKAGE_SENT_TAG, MPI_COMM_WORLD);
-
-    //printf("%d to %d\n", rank, procForNode);
-    MPI_Isend(match, 1, mpiMatchType, procForNode, match->matchedNodes,
-        MPI_COMM_WORLD, &matchRequest);
-
-
-    MPI_Test(&matchRequest, &sendCompleted, MPI_STATUSES_IGNORE);
-    while (!sendCompleted) {
-        if (isMessageAvailable(rank, match->matchedNodes)) {
-            exploreReceivedMatch(rank, match->matchedNodes, graph, pattern,
-                nodesMatchingOrder, patternParents);
-        }
-        MPI_Test(&matchRequest, &sendCompleted, MPI_STATUSES_IGNORE);
+    int nextPatternNodeNum, patternParentNum, parentInGraphNum;
+    
+    nextPatternNodeNum = nodesMatchingOrder[match->matchedNodes];
+    if (nextPatternNodeNum < 0) {
+        nextPatternNodeNum = -nextPatternNodeNum;
     }
+    patternParentNum = patternParents[nextPatternNodeNum];
+    parentInGraphNum = patternNumToGraphNum(match, patternParentNum);
+
+    return getNode(graph, parentInGraphNum);
 }
 
 void exploreMatch(int rank, Graph* graph, Graph* pattern, Match *match,
-    int *nodesMatchingOrder, int *patternParents)
+    int *nodesMatchingOrder, int *patternParents, Node *parentInGraph)
 {
-    Node *parentInGraph;
     Node *nextPatternNode;
     Node *nextGraphNode;
     int *edgesToCheck;
-    int nextPatternNodeNum, patternParentNum, parentInGraphNum, nextGraphNodeNum;
-    int numOfEdges, visitedViaInEdge, i;
+    int nextPatternNodeNum, nextGraphNodeNum, numOfEdges, visitedViaInEdge, i;
+    int isNextInGraph;
 
+    /*
+    if (parentInGraph == NULL) {
+        parentInGraph = getNextParent(graph, match, nodesMatchingOrder, 
+            patternParents);
+    }
+    */
 
     if (match->matchedNodes == pattern->numOfNodes) {
         //printf ("%d match found ", rank);
@@ -714,19 +720,8 @@ void exploreMatch(int rank, Graph* graph, Graph* pattern, Match *match,
     } else {
         visitedViaInEdge = 0;
     }
-    patternParentNum = patternParents[nextPatternNodeNum];
-    parentInGraphNum = patternNumToGraphNum(match, patternParentNum);
-
-    if (!isInGraph(graph, parentInGraphNum)) {
-        sendToProcWithNode(graph, pattern, parentInGraphNum, match, -1, -1,
-            rank, nodesMatchingOrder, patternParents);
-        return;
-    }
-
-    //printf ("rank %d next pnode %d pparent %d gparent %d\n", rank, nextPatternNodeNum, patternParentNum, parentInGraphNum);
-
     nextPatternNode = getNode(pattern, nextPatternNodeNum);
-    parentInGraph = getNode(graph, parentInGraphNum);
+    //printf ("rank %d next pnode %d pparent %d gparent %d\n", rank, nextPatternNodeNum, patternParentNum, parentInGraphNum);
 
     // For neighbors of parent we try to match the new node depending whether
     // current node was visited by ingoing or outgoing edge in undirected dfs
@@ -744,18 +739,22 @@ void exploreMatch(int rank, Graph* graph, Graph* pattern, Match *match,
         if (isInGraph(graph, nextGraphNodeNum)) {
             // Process continues matching, if next node is in its part of graph
             nextGraphNode = getNode(graph, nextGraphNodeNum);
-            //printf("rank %d match ", rank);
-            //printMatch(match, stdout);
-            if (nodeMatches(nextGraphNode, nextPatternNode, match)) {
-                addNode(match, nextPatternNodeNum, nextGraphNodeNum);
-                exploreMatch(rank, graph, pattern, match, nodesMatchingOrder,
-                    patternParents);
-                removeNode(match, nextPatternNodeNum);
-            }
+            isNextInGraph = 1;
         } else {
-            sendToProcWithNode(graph, pattern, nextGraphNodeNum, match,
-                nextGraphNodeNum, nextPatternNodeNum, rank,
-                nodesMatchingOrder, patternParents);
+            // Otherwise, asks for next node
+            Node nextNode;
+            askForNode(graph, nextGraphNodeNum, &nextNode);
+            nextGraphNode = &nextNode;
+            isNextInGraph = 0;
+        }
+        if (nodeMatches(nextGraphNode, nextPatternNode, match)) {
+            addNode(match, nextPatternNodeNum, nextGraphNodeNum);
+            exploreMatch(rank, graph, pattern, match, nodesMatchingOrder,
+                patternParents, nextGraphNode);
+            removeNode(match, nextPatternNodeNum);
+        }
+        if (!isNextInGraph) {
+            freeNode(nextGraphNode);
         }
     }
 }
@@ -764,6 +763,7 @@ void findMatches(int rank, Graph *graph, Graph *pattern,
     int *nodesMatchingOrder, int *patternParents, MPI_Datatype mpiMatchType)
 {
     int i, terminate;
+    int *tempBuf;
     Match m;
     MPI_Status status;
 
@@ -772,22 +772,22 @@ void findMatches(int rank, Graph *graph, Graph *pattern,
         m.matchedNodes = 1;
         m.matches[1] = graph->nodes[i].num;
         exploreMatch(rank, graph, pattern, &m, nodesMatchingOrder,
-            patternParents);
+            patternParents, &graph->nodes[i]);
     }
     //printf("rank %d all matches produced\n", rank);
     MPI_Ssend(NULL, 0, MPI_BYTE, ROOT, FINISHED_TAG, MPI_COMM_WORLD);
 
+    tempBuf = (int *) malloc(sizeof(int) * MAX_NODE_ENCODING);
     terminate = 0;
     while (!terminate) {
         MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
         if (status.MPI_TAG == TERMINATE_TAG) {
             terminate = 1;
         } else {
-            exploreReceivedMatch(rank, MPI_ANY_TAG, graph, pattern,
-                nodesMatchingOrder, patternParents);
+            handleNodeRequest(&status, graph, tempBuf);
         }
     }
-
+    free(tempBuf);
 }
 
 void receiveMatches(FILE *outFile, int numOfProcs, MPI_Datatype mpiMatchType,
@@ -796,12 +796,10 @@ void receiveMatches(FILE *outFile, int numOfProcs, MPI_Datatype mpiMatchType,
     Match receivedMatch;
     MPI_Status status;
     MPI_Request request;
-    int producingProcs, processedPackages, matchingFinished, actProc;
+    int producingProcs, matchingFinished, actProc;
 
     producingProcs = numOfProcs - 1;
-    processedPackages = 0;
     matchingFinished = 0;
-    int temp = 0;
     while(!matchingFinished) {
         MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
         switch(status.MPI_TAG) {
@@ -811,34 +809,22 @@ void receiveMatches(FILE *outFile, int numOfProcs, MPI_Datatype mpiMatchType,
                 assert(receivedMatch.matchedNodes == pattern->numOfNodes);
                 printMatch(&receivedMatch, outFile);
                 //printMatch(&receivedMatch, stdout);
-                fflush(outFile);
                 break;
             case FINISHED_TAG:
                 MPI_Recv(NULL, 0, MPI_BYTE, MPI_ANY_SOURCE,
                     FINISHED_TAG, MPI_COMM_WORLD, &status);
                 producingProcs--;
                 break;
-            case PACKAGE_SENT_TAG:
-                MPI_Recv(NULL, 0, MPI_BYTE, MPI_ANY_SOURCE,
-                    PACKAGE_SENT_TAG, MPI_COMM_WORLD, &status);
-                processedPackages++;
-                temp++;
-                break;
-            case PACKAGE_PROCESSED_TAG:
-                MPI_Recv(NULL, 0, MPI_BYTE, MPI_ANY_SOURCE,
-                    PACKAGE_PROCESSED_TAG, MPI_COMM_WORLD, &status);
-                processedPackages--;
-                break;
             default:
                 // This should never happen
                 break;
         }
-        //printf("RECEIVED %d\n", status.MPI_TAG);
-        if ((producingProcs == 0) && (processedPackages == 0)) {
+        if (producingProcs == 0) {
             matchingFinished = 1;
         }
     }
-    printf("All sent: %d\n", temp);
+    
+    // Inform all processes, that matching is finished
     for (actProc = 0; actProc < numOfProcs; ++actProc) {
         if (actProc != ROOT) {
             MPI_Isend(NULL, 0, MPI_BYTE, actProc, TERMINATE_TAG,
