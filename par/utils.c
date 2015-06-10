@@ -13,7 +13,6 @@ void error(const char* errorMsgFormat, ...)
     vfprintf(stderr, errorMsgFormat, argptr);
     fflush(stderr);
     va_end(argptr);
-    MPI_Finalize();
     exit(-1);
 }
 
@@ -62,7 +61,7 @@ int binsearch(int x, int *arr, int len)
         if (arr[mid] == x) {
             return 1;
         } else if (arr[mid] < x) {
-            left = mid + 1;            
+            left = mid + 1;
         } else {
             right = mid - 1;
         }
