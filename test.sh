@@ -5,7 +5,7 @@ for file in data/*.in
 do
     base=${file%.*}
     echo $base
-    for i in {1..100}
+    for i in {1..10}
     do
         echo $i; mpirun -np 8 par/gpm-par.exe $file out
         sort out > out2
