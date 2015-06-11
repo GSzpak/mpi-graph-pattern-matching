@@ -35,6 +35,8 @@
 
 
 MPI_Datatype mpiMatchType;
+// buffer to handle sending / receiving nodes
+int *nodesSendingReceivingBuffer;
 int rankG; /////////////////////////// FIXME:
 
 /*
@@ -579,7 +581,7 @@ int nodeMatches(Node *graphNode, Node *patternNode, Match* match)
     return 1;
 }
 
-void handleNodeRequest(MPI_Status *status, Graph *graph, int *buffer)
+void handleNodeRequest(MPI_Status *status, Graph *graph)
 {
     int requestedNode, bufIndex;
 
@@ -588,58 +590,52 @@ void handleNodeRequest(MPI_Status *status, Graph *graph, int *buffer)
         NODE_REQ_TAG, MPI_COMM_WORLD, status);
     bufIndex = 0;
    //printf("request in %d from %d for %d\n", rankG, status->MPI_SOURCE, requestedNode);
-    copyNodeToBuffer(graph, requestedNode, buffer, &bufIndex);
-    MPI_Send(buffer, bufIndex, MPI_INT, status->MPI_SOURCE,
+    copyNodeToBuffer(graph, requestedNode, nodesSendingReceivingBuffer, &bufIndex);
+    MPI_Send(nodesSendingReceivingBuffer, bufIndex, MPI_INT, status->MPI_SOURCE,
         NODE_RESP_TAG, MPI_COMM_WORLD);
 }
 
 void askForNode(Graph *graph, int nodeNum, Node *nextNode)
 {
     int procForNode, responseReceived, bufIndex;
-    int *tempBuf;
     MPI_Request request;
     MPI_Status status;
 
     procForNode = graph->procForNode[nodeNum];
-    tempBuf = (int *) malloc(sizeof(int) * MAX_NODE_ENCODING);
-
-    MPI_Isend(&nodeNum, 1, MPI_INT, procForNode, NODE_REQ_TAG,
+    MPI_Isend(&nodeNum, 1, MPI_INT, procForNode, NODE_REQ_TAG, 
         MPI_COMM_WORLD, &request);
+
    //printf("%d asked for %d\n", rankG, nodeNum);
     bufIndex = 0;
     responseReceived = 0;
     while (!responseReceived) {
         MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
         if (status.MPI_TAG == NODE_RESP_TAG) {
-            MPI_Recv(tempBuf, MAX_NODE_ENCODING, MPI_INT,
+            MPI_Recv(nodesSendingReceivingBuffer, MAX_NODE_ENCODING, MPI_INT,
                 status.MPI_SOURCE, NODE_RESP_TAG, MPI_COMM_WORLD, &status);
-            readReceivedNode(nextNode, nodeNum, tempBuf, &bufIndex);
+            readReceivedNode(nextNode, nodeNum,
+                nodesSendingReceivingBuffer, &bufIndex);
             responseReceived = 1;
             bufIndex = 0;
         } else {
-            handleNodeRequest(&status, graph, tempBuf);
+            handleNodeRequest(&status, graph);
         }
     }
-
-    free(tempBuf);
 }
 
 void handlePendingRequests(Graph *graph)
 {
     int isAvailable;
-    int *tempBuf;
     MPI_Status status;
 
-    tempBuf = (int *) malloc(sizeof(int) * MAX_NODE_ENCODING);
    //printf("%d handling\n", rankG);
     MPI_Iprobe(MPI_ANY_SOURCE, NODE_REQ_TAG, MPI_COMM_WORLD,
         &isAvailable, &status);
     while (isAvailable) {
-        handleNodeRequest(&status, graph, tempBuf);
+        handleNodeRequest(&status, graph);
         MPI_Iprobe(MPI_ANY_SOURCE, NODE_REQ_TAG, MPI_COMM_WORLD,
             &isAvailable, &status);
     }
-    free(tempBuf);
    //printf("%d handling finished\n", rankG);
 }
 
@@ -754,7 +750,6 @@ void exploreMatch(Graph* graph, Graph* pattern, Match *match,
 void findMatches(Graph *graph, Graph *pattern, int *nodesMatchingOrder,
     int *patternParents)
 {
-    int *tempBuf;
     Match m;
     MPI_Status status;
     Node receivedMatchedNodes[MAX_MATCH_SIZE];
@@ -787,17 +782,15 @@ void findMatches(Graph *graph, Graph *pattern, int *nodesMatchingOrder,
 
     MPI_Ssend(NULL, 0, MPI_BYTE, ROOT, FINISHED_TAG, MPI_COMM_WORLD);
 
-    tempBuf = (int *) malloc(sizeof(int) * MAX_NODE_ENCODING);
     terminate = 0;
     while (!terminate) {
         MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
         if (status.MPI_TAG == TERMINATE_TAG) {
             terminate = 1;
         } else {
-            handleNodeRequest(&status, graph, tempBuf);
+            handleNodeRequest(&status, graph);
         }
     }
-    free(tempBuf);
 }
 
 void receiveMatches(FILE *outFile, int numOfProcs, Graph *pattern)
@@ -909,6 +902,8 @@ int main(int argc, char **argv)
         receiveMatches(outFile, numOfProcs, &pattern);
         fclose(outFile);
     } else {
+        nodesSendingReceivingBuffer =
+            (int *) malloc(sizeof(int) * MAX_NODE_ENCODING);
         prepareGraphInWorker(&graph);
         //printf("%d graph prepared\n", rank);
         receiveOutEdges(rank, numOfProcs, &graph);
@@ -931,6 +926,7 @@ int main(int argc, char **argv)
         findMatches(&graph, &pattern, patternDfsOrder, patternDfsParents);
         free(patternDfsOrder);
         free(patternDfsParents);
+        free(nodesSendingReceivingBuffer);
     }
 
     //printf("%d ends\n", rank);
