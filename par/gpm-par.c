@@ -41,6 +41,7 @@ int rankG; /////////////////////////// FIXME:
 
 /*
  * Counts in/out degrees for each node. Called only in root.
+ * Assumes, that input is encoded correctly
  */
 void countDegrees(FILE *inFile, Graph *graph)
 {
@@ -673,6 +674,45 @@ void addFinishedMatch(Match *match, Match *finishedMatches, int *index)
     }
 }
 
+
+void exploreMatch(Graph* graph, Graph* pattern, Match *match,
+    int *nodesMatchingOrder, int *patternParents,
+    Node receivedMatchedNodes[MAX_MATCH_SIZE], int *receivedMatchedNodesInd,
+    Match *finishedMatches, int *finishedMatchesInd);
+
+void tryMatchNextGraphNode(Graph* graph, Graph* pattern, Match *match,
+    int *nodesMatchingOrder, int *patternParents,
+    Node receivedMatchedNodes[MAX_MATCH_SIZE], int *receivedMatchedNodesInd,
+    Match *finishedMatches, int *finishedMatchesInd,
+    Node *nextPatternNode, int nextGraphNodeNum)
+{
+    int isNextInGraph;
+    Node *nextGraphNode;
+
+    if (isInGraph(graph, nextGraphNodeNum)) {
+            // Process continues matching, if next node is in its part of graph
+            nextGraphNode = getNode(graph, nextGraphNodeNum);
+            isNextInGraph = 1;
+    } else {
+        // Otherwise, asks for next node
+        askForNode(graph, nextGraphNodeNum,
+            receivedMatchedNodes + *receivedMatchedNodesInd);
+        //printf("rank %d received %d\n", rankG, nextGraphNodeNum);
+        nextGraphNode = &receivedMatchedNodes[(*receivedMatchedNodesInd)++];
+        isNextInGraph = 0;
+    }
+    if (nodeMatches(nextGraphNode, nextPatternNode, match)) {
+        addNode(match, nextPatternNode->num, nextGraphNodeNum);
+        exploreMatch(graph, pattern, match, nodesMatchingOrder,
+            patternParents, receivedMatchedNodes, receivedMatchedNodesInd,
+            finishedMatches, finishedMatchesInd);
+        removeNode(match, nextPatternNode->num);
+    }
+    if (!isNextInGraph) {
+        freeNode(&receivedMatchedNodes[(*receivedMatchedNodesInd)--]);
+    }
+}
+
 void exploreMatch(Graph* graph, Graph* pattern, Match *match,
     int *nodesMatchingOrder, int *patternParents,
     Node receivedMatchedNodes[MAX_MATCH_SIZE], int *receivedMatchedNodesInd,
@@ -680,10 +720,8 @@ void exploreMatch(Graph* graph, Graph* pattern, Match *match,
 {
     Node *parentInGraph;
     Node *nextPatternNode;
-    Node *nextGraphNode;
     int *edgesToCheck;
     int nextPatternNodeNum, nextGraphNodeNum, numOfEdges, visitedViaInEdge, i;
-    int isNextInGraph;
 
    //printf ("rank %d match ", rankG);
     //printMatch(match, stdout);
@@ -722,28 +760,10 @@ void exploreMatch(Graph* graph, Graph* pattern, Match *match,
     for (i = 0; i < numOfEdges; ++i) {
         nextGraphNodeNum = edgesToCheck[i];
        //printf("rank %d parent %d nextGraphNodeNum %d\n", rankG, parentInGraph->num, nextGraphNodeNum);
-        if (isInGraph(graph, nextGraphNodeNum)) {
-            // Process continues matching, if next node is in its part of graph
-            nextGraphNode = getNode(graph, nextGraphNodeNum);
-            isNextInGraph = 1;
-        } else {
-            // Otherwise, asks for next node
-            askForNode(graph, nextGraphNodeNum,
-                receivedMatchedNodes + *receivedMatchedNodesInd);
-            //printf("rank %d received %d\n", rankG, nextGraphNodeNum);
-            nextGraphNode = &receivedMatchedNodes[(*receivedMatchedNodesInd)++];
-            isNextInGraph = 0;
-        }
-        if (nodeMatches(nextGraphNode, nextPatternNode, match)) {
-            addNode(match, nextPatternNodeNum, nextGraphNodeNum);
-            exploreMatch(graph, pattern, match, nodesMatchingOrder,
-                patternParents, receivedMatchedNodes, receivedMatchedNodesInd,
-                finishedMatches, finishedMatchesInd);
-            removeNode(match, nextPatternNodeNum);
-        }
-        if (!isNextInGraph) {
-            freeNode(&receivedMatchedNodes[(*receivedMatchedNodesInd)--]);
-        }
+        tryMatchNextGraphNode(graph, pattern, match, nodesMatchingOrder,
+            patternParents, receivedMatchedNodes, receivedMatchedNodesInd,
+            finishedMatches, finishedMatchesInd, nextPatternNode,
+            nextGraphNodeNum);   
     }
 }
 
@@ -771,6 +791,7 @@ void findMatches(Graph *graph, Graph *pattern, int *nodesMatchingOrder,
             finishedMatches, &finishedMatchesInd);
         receivedMatchedNodesInd = 0;
         memset(receivedMatchedNodes, 0, sizeof(receivedMatchedNodes));
+        //printf("%d %d\n", rankG, i);
     }
 
     if (finishedMatchesInd != 0) {

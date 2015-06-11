@@ -7,8 +7,6 @@
 
 typedef struct {
     int matchedNodes;
-    int nextGraphNode;
-    int nextPatternNode;
     // `matches[i] contains data graph node id of `i` node in pattern or -1 if the
     // node is not yet matched.
     int matches[MAX_MATCH_SIZE + 1];
