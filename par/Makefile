@@ -1,8 +1,8 @@
 CC=mpicc
 FLAGS=-Wall
 
-HEADERS = match.h utils.h graph.h
-OBJECTS = match.o utils.o graph.o gpm-par.o
+HEADERS = distribution.h match.h utils.h graph.h
+OBJECTS = distribution.o match.o utils.o graph.o gpm-par.o
 
 default: gpm-par.exe
 
