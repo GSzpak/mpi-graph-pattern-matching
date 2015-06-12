@@ -709,7 +709,7 @@ void tryMatchNextGraphNode(Graph* graph, Graph* pattern, Match *match,
         removeNode(match, nextPatternNode->num);
     }
     if (!isNextInGraph) {
-        freeNode(&receivedMatchedNodes[(*receivedMatchedNodesInd)--]);
+        freeNode(&receivedMatchedNodes[--(*receivedMatchedNodesInd)]);
     }
 }
 
@@ -789,8 +789,9 @@ void findMatches(Graph *graph, Graph *pattern, int *nodesMatchingOrder,
         exploreMatch(graph, pattern, &m, nodesMatchingOrder,
             patternParents, receivedMatchedNodes, &receivedMatchedNodesInd,
             finishedMatches, &finishedMatchesInd);
-        receivedMatchedNodesInd = 0;
-        memset(receivedMatchedNodes, 0, sizeof(receivedMatchedNodes));
+        assert(receivedMatchedNodesInd == 0);
+        // FIXME:
+        //memset(receivedMatchedNodes, 0, sizeof(receivedMatchedNodes));
         //printf("%d %d\n", rankG, i);
     }
 
@@ -936,10 +937,10 @@ int main(int argc, char **argv)
         exchangeInEdges(rank, numOfProcs, &graph);
         /*
         sleep(rank);
-       //printf("%d graph received\n", rank);
+        printf("%d graph received\n", rank);
         printGraphDebug(&graph);
         sleep(4);
-        */
+        //*/
         receivePattern(&pattern);
         //printf("%d pattern received\n", rank);
         //printf("\n");
