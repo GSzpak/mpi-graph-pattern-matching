@@ -6,6 +6,7 @@
 
 #include "utils.h"
 
+
 void error(const char* errorMsgFormat, ...)
 {
     va_list argptr;

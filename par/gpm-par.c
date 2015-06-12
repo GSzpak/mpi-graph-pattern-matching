@@ -598,30 +598,29 @@ void handleNodeRequest(MPI_Status *status, Graph *graph)
 
 void askForNode(Graph *graph, int nodeNum, Node *nextNode)
 {
-    int procForNode, responseReceived, bufIndex;
-    MPI_Request request;
+    int procForNode, responseReceived, requestAvailable, bufIndex;
+    MPI_Request requests[2];
     MPI_Status status;
 
     procForNode = graph->procForNode[nodeNum];
     MPI_Isend(&nodeNum, 1, MPI_INT, procForNode, NODE_REQ_TAG, 
-        MPI_COMM_WORLD, &request);
+        MPI_COMM_WORLD, &requests[0]);
+    MPI_Irecv(nodesSendingReceivingBuffer, MAX_NODE_ENCODING, MPI_INT,
+        procForNode, NODE_RESP_TAG, MPI_COMM_WORLD, &requests[1]);
 
    //printf("%d asked for %d\n", rankG, nodeNum);
-    bufIndex = 0;
-    responseReceived = 0;
+    MPI_Testall(2, requests, &responseReceived, MPI_STATUSES_IGNORE);
     while (!responseReceived) {
-        MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-        if (status.MPI_TAG == NODE_RESP_TAG) {
-            MPI_Recv(nodesSendingReceivingBuffer, MAX_NODE_ENCODING, MPI_INT,
-                status.MPI_SOURCE, NODE_RESP_TAG, MPI_COMM_WORLD, &status);
-            readReceivedNode(nextNode, nodeNum,
-                nodesSendingReceivingBuffer, &bufIndex);
-            responseReceived = 1;
-            bufIndex = 0;
-        } else {
+        MPI_Iprobe(MPI_ANY_SOURCE, NODE_REQ_TAG, MPI_COMM_WORLD,
+            &requestAvailable, &status);
+        if (requestAvailable) {
             handleNodeRequest(&status, graph);
         }
+        MPI_Testall(2, requests, &responseReceived, MPI_STATUSES_IGNORE);
     }
+
+    bufIndex = 0;
+    readReceivedNode(nextNode, nodeNum, nodesSendingReceivingBuffer, &bufIndex);
 }
 
 void handlePendingRequests(Graph *graph)
@@ -819,7 +818,7 @@ void receiveMatches(FILE *outFile, int numOfProcs, Graph *pattern)
 {
     Match *receivedMatches;
     MPI_Status status;
-    MPI_Request request;
+    MPI_Request endRequests[numOfProcs - 1];
     int producingProcs, matchingFinished, actProc, numOfReceived, i;
 
     receivedMatches = malloc(sizeof(Match) * MATCH_BUFFER_SIZE);
@@ -853,14 +852,17 @@ void receiveMatches(FILE *outFile, int numOfProcs, Graph *pattern)
     }
 
     free(receivedMatches);
-
+    
     // Inform all processes, that matching is finished
     for (actProc = 0; actProc < numOfProcs; ++actProc) {
+        MPI_Request *actRequest = actProc < ROOT ? endRequests + actProc :
+            endRequests + actProc - 1;
         if (actProc != ROOT) {
             MPI_Isend(NULL, 0, MPI_BYTE, actProc, TERMINATE_TAG,
-                MPI_COMM_WORLD, &request);
+                MPI_COMM_WORLD, actRequest);
         }
     }
+    MPI_Waitall(numOfProcs - 1, endRequests, MPI_STATUSES_IGNORE);
 }
 
 int main(int argc, char **argv)
