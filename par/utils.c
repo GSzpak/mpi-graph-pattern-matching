@@ -14,6 +14,7 @@ void error(const char* errorMsgFormat, ...)
     vfprintf(stderr, errorMsgFormat, argptr);
     fflush(stderr);
     va_end(argptr);
+    MPI_Finalize();
     exit(-1);
 }
 
@@ -68,4 +69,13 @@ int binsearch(int x, int *arr, int len)
         }
     }
     return 0;
+}
+
+void *safeMalloc(size_t size)
+{
+    void *result = malloc(size);
+    if (result == NULL) {
+        error("Failed to allocate memory.\n");
+    }
+    return result;
 }
