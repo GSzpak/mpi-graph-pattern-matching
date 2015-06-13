@@ -14,7 +14,6 @@
 // Maximum node encoding size
 // Node is encoded as follows: num, outDegree, inDegree, outEdges, inEdges
 #define MAX_NODE_ENCODING 2 * MAX_NUM_OF_NODES + 3
-// Each process has 200MB for its nodes and edges
 #define MATCH_BUFFER_SIZE 100000
 #define MATCHES_TAG 54
 #define FINISHED_TAG 55
@@ -25,8 +24,10 @@
 
 // MPI datatype for Match struct
 MPI_Datatype mpiMatchType;
-// buffer to handle sending / receiving nodes
-int *nodesSendingReceivingBuffer;
+// Buffers to handle sending / receiving nodes
+// Declared global to avoid unnecessary mallocs / frees
+int *nodesSendingBuffer;
+int *nodesReceivingBuffer;
 
 
 // functions declarations
@@ -104,9 +105,8 @@ void handleNodeRequest(MPI_Status *status, Graph *graph)
     MPI_Recv(&requestedNode, 1, MPI_INT, status->MPI_SOURCE,
         NODE_REQ_TAG, MPI_COMM_WORLD, status);
     bufIndex = 0;
-   //printf("request in %d from %d for %d\n", rankG, status->MPI_SOURCE, requestedNode);
-    copyNodeToBuffer(graph, requestedNode, nodesSendingReceivingBuffer, &bufIndex);
-    MPI_Send(nodesSendingReceivingBuffer, bufIndex, MPI_INT, status->MPI_SOURCE,
+    copyNodeToBuffer(graph, requestedNode, nodesSendingBuffer, &bufIndex);
+    MPI_Send(nodesSendingBuffer, bufIndex, MPI_INT, status->MPI_SOURCE,
         NODE_RESP_TAG, MPI_COMM_WORLD);
 }
 
@@ -115,7 +115,6 @@ void handlePendingRequests(Graph *graph)
     int isAvailable;
     MPI_Status status;
 
-   //printf("%d handling\n", rankG);
     MPI_Iprobe(MPI_ANY_SOURCE, NODE_REQ_TAG, MPI_COMM_WORLD,
         &isAvailable, &status);
     while (isAvailable) {
@@ -123,7 +122,6 @@ void handlePendingRequests(Graph *graph)
         MPI_Iprobe(MPI_ANY_SOURCE, NODE_REQ_TAG, MPI_COMM_WORLD,
             &isAvailable, &status);
     }
-   //printf("%d handling finished\n", rankG);
 }
 
 void askForNode(Graph *graph, int nodeNum, Node *nextNode)
@@ -135,7 +133,7 @@ void askForNode(Graph *graph, int nodeNum, Node *nextNode)
     procForNode = graph->procForNode[nodeNum];
     MPI_Isend(&nodeNum, 1, MPI_INT, procForNode, NODE_REQ_TAG,
         MPI_COMM_WORLD, &requests[0]);
-    MPI_Irecv(nodesSendingReceivingBuffer, MAX_NODE_ENCODING, MPI_INT,
+    MPI_Irecv(nodesReceivingBuffer, MAX_NODE_ENCODING, MPI_INT,
         procForNode, NODE_RESP_TAG, MPI_COMM_WORLD, &requests[1]);
 
     MPI_Testall(2, requests, &responseReceived, MPI_STATUSES_IGNORE);
@@ -149,7 +147,7 @@ void askForNode(Graph *graph, int nodeNum, Node *nextNode)
     }
 
     bufIndex = 0;
-    readReceivedNode(nextNode, nodeNum, nodesSendingReceivingBuffer, &bufIndex);
+    readReceivedNode(nextNode, nodeNum, nodesReceivingBuffer, &bufIndex);
 }
 
 Node *getNextParent(Graph *graph, Match *match, int *patternParents,
@@ -203,7 +201,6 @@ void tryMatchNextGraphNode(Graph* graph, Graph* pattern, Match *match,
         // Otherwise, asks for next node
         askForNode(graph, nextGraphNodeNum,
             receivedMatchedNodes + *receivedMatchedNodesInd);
-        //printf("rank %d received %d\n", rankG, nextGraphNodeNum);
         nextGraphNode = &receivedMatchedNodes[(*receivedMatchedNodesInd)++];
         isNextInGraph = 0;
     }
@@ -229,14 +226,9 @@ void exploreMatch(Graph* graph, Graph* pattern, Match *match,
     int *edgesToCheck;
     int nextPatternNodeNum, nextGraphNodeNum, numOfEdges, visitedViaInEdge, i;
 
-   //printf ("rank %d match ", rankG);
-    //printMatch(match, stdout);
-
     handlePendingRequests(graph);
 
     if (match->matchedNodes == pattern->numOfNodes) {
-        //printf ("%d match found ", rank);
-        //printMatch(match, stdout);
         addFinishedMatch(match, finishedMatches, finishedMatchesInd);
         return;
     }
@@ -252,7 +244,6 @@ void exploreMatch(Graph* graph, Graph* pattern, Match *match,
     parentInGraph = getNextParent(graph, match, patternParents,
         nextPatternNodeNum, receivedMatchedNodes);
 
-   //printf ("rank %d next pnode %d parent %d\n", rankG, nextPatternNodeNum, parentInGraph->num);
     // For neighbors of parent we try to match the new node depending whether
     // current node was visited by ingoing or outgoing edge in undirected dfs
     if (visitedViaInEdge) {
@@ -436,7 +427,9 @@ int main(int argc, char **argv)
         fprintf(stdout, "time[s]: %.2f\n", endTime - startTime);
         fclose(outFile);
     } else {
-        nodesSendingReceivingBuffer =
+        nodesSendingBuffer =
+            (int *) safeMalloc(sizeof(int) * MAX_NODE_ENCODING);
+        nodesReceivingBuffer =
             (int *) safeMalloc(sizeof(int) * MAX_NODE_ENCODING);
         prepareGraphInWorker(&graph);
         //printf("%d graph prepared\n", rank);
@@ -460,10 +453,10 @@ int main(int argc, char **argv)
         findMatches(&graph, &pattern, patternDfsOrder, patternDfsParents);
         free(patternDfsOrder);
         free(patternDfsParents);
-        free(nodesSendingReceivingBuffer);
+        free(nodesSendingBuffer);
+        free(nodesReceivingBuffer);
     }
 
-    //printf("%d ends\n", rank);
     freeGraph(&graph);
     freeGraph(&pattern);
 

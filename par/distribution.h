@@ -9,6 +9,7 @@
 // Maximum pattern encoding size
 // Check distributePattern function for more information
 #define MAX_PATTERN_SIZE 1 + MAX_PATTERN_NODES * (2 + 2 * MAX_PATTERN_NODES)
+// Each process has 200MB for its nodes and edges
 #define SIZE_AVAILABLE 209715200
 // MPI tags
 #define NUM_NODES_TAG 51
