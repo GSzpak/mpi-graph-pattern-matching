@@ -216,7 +216,7 @@ void prepareGraphInWorker(Graph *graph)
  */
 void receiveOutEdges(int rank, int numOfProcs, Graph *graph)
 {
-    int actNodeNum, actOutDeg, actInDeg, actNeighbour, i, j, nodeSize;
+    int actNodeNum, actOutDeg, actInDeg, i, nodeSize;
     Node *actNode;
     MPI_Status status;
 
@@ -244,11 +244,7 @@ void receiveOutEdges(int rank, int numOfProcs, Graph *graph)
         if (actInDeg > 0) {
             actNode->inEdges = (int *) safeMalloc(sizeof(int) * actInDeg);
         }
-        for (j = 0; j < actOutDeg; ++j) {
-            actNeighbour = tempBuf[j + 3];
-            actNode->outEdges[j] = actNeighbour;
-        }
-        qsort(actNode->outEdges, actNode->outDegree, sizeof(int), intComparator);
+        memcpy(actNode->outEdges, tempBuf + 3, sizeof(int) * actOutDeg);
     }
 
     free(tempBuf);

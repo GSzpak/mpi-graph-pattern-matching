@@ -176,34 +176,31 @@ int isInGraph(Graph *graph, int nodeNum)
 
 void copyNodeToBuffer(Graph *graph, int nodeNum, int *buffer, int *bufIndex)
 {
-    int i;
     Node *actNode;
 
     actNode = getNode(graph, nodeNum);
     buffer[(*bufIndex)++] = actNode->outDegree;
     buffer[(*bufIndex)++] = actNode->inDegree;
-    for (i = 0; i < actNode->outDegree; ++i) {
-        buffer[(*bufIndex)++] = actNode->outEdges[i];
-    }
-    for (i = 0; i < actNode->inDegree; ++i) {
-        buffer[(*bufIndex)++] = actNode->inEdges[i];
-    }
+    memcpy(buffer + *bufIndex, actNode->outEdges,
+        sizeof(int) * actNode->outDegree);
+    *bufIndex += actNode->outDegree;
+    memcpy(buffer + *bufIndex, actNode->inEdges,
+        sizeof(int) * actNode->inDegree);
+    *bufIndex += actNode->inDegree;
 }
 
 void readReceivedNode(Node *node, int nodeNum, int *nodeBuffer,
     int *bufferActIndex)
 {
-    int i;
-
     node->num = nodeNum;
     node->outDegree = nodeBuffer[(*bufferActIndex)++];
     node->inDegree = nodeBuffer[(*bufferActIndex)++];
     node->outEdges = (int *) safeMalloc(sizeof(int) * node->outDegree);
     node->inEdges = (int *) safeMalloc(sizeof(int) * node->inDegree);
-    for (i = 0; i < node->outDegree; ++i) {
-        node->outEdges[i] = nodeBuffer[(*bufferActIndex)++];
-    }
-    for (i = 0; i < node->inDegree; ++i) {
-        node->inEdges[i] = nodeBuffer[(*bufferActIndex)++];
-    }
+    memcpy(node->outEdges, nodeBuffer + *bufferActIndex,
+        sizeof(int) * node->outDegree);
+    *bufferActIndex += node->outDegree;
+    memcpy(node->inEdges, nodeBuffer + *bufferActIndex,
+        sizeof(int) * node->inDegree);
+    *bufferActIndex += node->inDegree;
 }
