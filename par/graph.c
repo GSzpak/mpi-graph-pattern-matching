@@ -204,3 +204,15 @@ void readReceivedNode(Node *node, int nodeNum, int *nodeBuffer,
         sizeof(int) * node->inDegree);
     *bufferActIndex += node->inDegree;
 }
+
+void reproduceNode(Node *node, int nodeNum, int *inEdgesBuffer, int inDegree,
+    int *outEdgesBuffer, int outDegree)
+{
+    node->num = nodeNum;
+    node->outDegree = outDegree;
+    node->inDegree = inDegree;
+    node->outEdges = (int *) safeMalloc(sizeof(int) * outDegree);
+    node->inEdges = (int *) safeMalloc(sizeof(int) * inDegree);
+    memcpy(node->outEdges, outEdgesBuffer, sizeof(int) * outDegree);
+    memcpy(node->inEdges, inEdgesBuffer, sizeof(int) * inDegree);
+}

@@ -3,7 +3,6 @@
 #include <string.h>
 #include <mpi.h>
 #include <assert.h>
-#include <unistd.h> // TODO: delete
 
 #include "graph.h"
 #include "utils.h"
@@ -18,19 +17,20 @@
 #define MATCHES_TAG 54
 #define FINISHED_TAG 55
 #define NODE_REQ_TAG 56
-#define NODE_RESP_TAG 57
-#define TERMINATE_TAG 58
+#define REC_IN_EDGES_TAG 57
+#define REC_OUT_EDGES_TAG 58
+#define TERMINATE_TAG 59
 
 
 // MPI datatype for Match struct
 MPI_Datatype mpiMatchType;
-// Buffers to handle sending / receiving nodes
+// Buffers to handle received in/out edges of current node
 // Declared global to avoid unnecessary mallocs / frees
-int *nodesSendingBuffer;
-int *nodesReceivingBuffer;
+int *receivedInEdgesBuffer;
+int *receivedOutEdgesBuffer;
 
 
-// functions declarations
+// Functions declarations
 void findPatternDfsOrdering(Graph *pattern, int **patternDfsOrder,
     int **patternDfsParents);
 int nodeMatches(Node *graphNode, Node *patternNode, Match* match);
@@ -99,15 +99,20 @@ int nodeMatches(Node *graphNode, Node *patternNode, Match* match)
 
 void handleNodeRequest(MPI_Status *status, Graph *graph)
 {
-    int requestedNode, bufIndex;
+    int requestedNodeNum;
+    MPI_Request inEdgesRequest, outEdgesRequest;
+    Node *node;
 
     assert(status->MPI_TAG == NODE_REQ_TAG);
-    MPI_Recv(&requestedNode, 1, MPI_INT, status->MPI_SOURCE,
+    MPI_Recv(&requestedNodeNum, 1, MPI_INT, status->MPI_SOURCE,
         NODE_REQ_TAG, MPI_COMM_WORLD, status);
-    bufIndex = 0;
-    copyNodeToBuffer(graph, requestedNode, nodesSendingBuffer, &bufIndex);
-    MPI_Send(nodesSendingBuffer, bufIndex, MPI_INT, status->MPI_SOURCE,
-        NODE_RESP_TAG, MPI_COMM_WORLD);
+    node = getNode(graph, requestedNodeNum);
+    MPI_Isend(node->inEdges, node->inDegree, MPI_INT, status->MPI_SOURCE,
+        REC_IN_EDGES_TAG, MPI_COMM_WORLD, &inEdgesRequest);
+    MPI_Isend(node->outEdges, node->outDegree, MPI_INT, status->MPI_SOURCE,
+        REC_OUT_EDGES_TAG, MPI_COMM_WORLD, &outEdgesRequest);
+    MPI_Request_free(&inEdgesRequest);
+    MPI_Request_free(&outEdgesRequest);
 }
 
 void handlePendingRequests(Graph *graph)
@@ -126,28 +131,33 @@ void handlePendingRequests(Graph *graph)
 
 void askForNode(Graph *graph, int nodeNum, Node *nextNode)
 {
-    int procForNode, responseReceived, requestAvailable, bufIndex;
-    MPI_Request requests[2];
-    MPI_Status status;
+    int procForNode, responseReceived, requestAvailable, inReceived, outReceived;
+    MPI_Request requests[3];
+    MPI_Status nodeReceivingStatuses[3];
+    MPI_Status nodeSendingStatus;
 
     procForNode = graph->procForNode[nodeNum];
     MPI_Isend(&nodeNum, 1, MPI_INT, procForNode, NODE_REQ_TAG,
         MPI_COMM_WORLD, &requests[0]);
-    MPI_Irecv(nodesReceivingBuffer, MAX_NODE_ENCODING, MPI_INT,
-        procForNode, NODE_RESP_TAG, MPI_COMM_WORLD, &requests[1]);
+    MPI_Irecv(receivedInEdgesBuffer, MAX_NODE_ENCODING, MPI_INT,
+        procForNode, REC_IN_EDGES_TAG, MPI_COMM_WORLD, &requests[1]);
+    MPI_Irecv(receivedOutEdgesBuffer, MAX_NODE_ENCODING, MPI_INT,
+        procForNode, REC_OUT_EDGES_TAG, MPI_COMM_WORLD, &requests[2]);
 
-    MPI_Testall(2, requests, &responseReceived, MPI_STATUSES_IGNORE);
+    MPI_Testall(3, requests, &responseReceived, nodeReceivingStatuses);
     while (!responseReceived) {
         MPI_Iprobe(MPI_ANY_SOURCE, NODE_REQ_TAG, MPI_COMM_WORLD,
-            &requestAvailable, &status);
+            &requestAvailable, &nodeSendingStatus);
         if (requestAvailable) {
-            handleNodeRequest(&status, graph);
+            handleNodeRequest(&nodeSendingStatus, graph);
         }
-        MPI_Testall(2, requests, &responseReceived, MPI_STATUSES_IGNORE);
+        MPI_Testall(3, requests, &responseReceived, nodeReceivingStatuses);
     }
 
-    bufIndex = 0;
-    readReceivedNode(nextNode, nodeNum, nodesReceivingBuffer, &bufIndex);
+    MPI_Get_count(&nodeReceivingStatuses[1], MPI_INT, &inReceived);
+    MPI_Get_count(&nodeReceivingStatuses[2], MPI_INT, &outReceived);
+    reproduceNode(nextNode, nodeNum, receivedInEdgesBuffer, inReceived,
+        receivedOutEdgesBuffer, outReceived);
 }
 
 Node *getNextParent(Graph *graph, Match *match, int *patternParents,
@@ -416,10 +426,10 @@ int main(int argc, char **argv)
         printf("Computations time[s]: %.2f\n", endTime - distributionTime);
         fclose(outFile);
     } else {
-        nodesSendingBuffer =
-            (int *) safeMalloc(sizeof(int) * MAX_NODE_ENCODING);
-        nodesReceivingBuffer =
-            (int *) safeMalloc(sizeof(int) * MAX_NODE_ENCODING);
+        receivedInEdgesBuffer =
+            (int *) safeMalloc(sizeof(int) * MAX_NUM_OF_NODES);
+        receivedOutEdgesBuffer =
+            (int *) safeMalloc(sizeof(int) * MAX_NUM_OF_NODES);
         prepareGraphInWorker(&graph);
         receiveOutEdges(rank, numOfProcs, &graph);
         exchangeInEdges(rank, numOfProcs, &graph);
@@ -428,8 +438,8 @@ int main(int argc, char **argv)
         findMatches(&graph, &pattern, patternDfsOrder, patternDfsParents);
         free(patternDfsOrder);
         free(patternDfsParents);
-        free(nodesSendingBuffer);
-        free(nodesReceivingBuffer);
+        free(receivedInEdgesBuffer);
+        free(receivedOutEdgesBuffer);
     }
 
     freeGraph(&graph);

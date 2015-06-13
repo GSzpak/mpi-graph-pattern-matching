@@ -47,5 +47,8 @@ int isInGraph(Graph *graph, int nodeNum);
 void copyNodeToBuffer(Graph *graph, int nodeNum, int *buffer, int *bufIndex);
 void readReceivedNode(Node *node, int nodeNum, int *nodeBuffer,
     int *bufferActIndex);
+void reproduceNode(Node *node, int nodeNum, int *inEdgesBuffer, int inDegree,
+    int *outEdgesBuffer, int outDegree);
+
 
 #endif //GRAPH_H
