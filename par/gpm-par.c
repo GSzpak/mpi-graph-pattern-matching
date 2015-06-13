@@ -153,7 +153,6 @@ void askForNode(Graph *graph, int nodeNum, Node *nextNode)
 Node *getNextParent(Graph *graph, Match *match, int *patternParents,
     int nextPatternNodeNum, Node receivedMatchedNodes[MAX_MATCH_SIZE])
 {
-    //printf("parent of %d \n", nextPatternNodeNum);
     int patternParentNum, parentInGraphNum, i;
     Node *result;
 
@@ -256,7 +255,6 @@ void exploreMatch(Graph* graph, Graph* pattern, Match *match,
 
     for (i = 0; i < numOfEdges; ++i) {
         nextGraphNodeNum = edgesToCheck[i];
-       //printf("rank %d parent %d nextGraphNodeNum %d\n", rankG, parentInGraph->num, nextGraphNodeNum);
         tryMatchNextGraphNode(graph, pattern, match, nodesMatchingOrder,
             patternParents, receivedMatchedNodes, receivedMatchedNodesInd,
             finishedMatches, finishedMatchesInd, nextPatternNode,
@@ -287,13 +285,10 @@ void findMatches(Graph *graph, Graph *pattern, int *nodesMatchingOrder,
             patternParents, receivedMatchedNodes, &receivedMatchedNodesInd,
             finishedMatches, &finishedMatchesInd);
         assert(receivedMatchedNodesInd == 0);
-        // FIXME:
-        //memset(receivedMatchedNodes, 0, sizeof(receivedMatchedNodes));
-        //printf("%d %d\n", rankG, i);
     }
 
     if (finishedMatchesInd != 0) {
-        // flush remaining finished matches
+        // Flush remaining finished matches
         MPI_Ssend(finishedMatches, finishedMatchesInd, mpiMatchType, ROOT,
             MATCHES_TAG, MPI_COMM_WORLD);
     }
@@ -332,7 +327,6 @@ void receiveMatches(FILE *outFile, int numOfProcs, Graph *pattern)
                     status.MPI_SOURCE, MATCHES_TAG, MPI_COMM_WORLD, &status);
                 for (i = 0; i < numOfReceived; ++i) {
                     printMatch(&receivedMatches[i], outFile);
-                    //printMatch(&receivedMatches[i], stdout);
                 }
                 break;
             case FINISHED_TAG:
@@ -378,7 +372,7 @@ int main(int argc, char **argv)
     int *numOfNodesForProc = NULL;
     int *patternDfsOrder = NULL;
     int *patternDfsParents = NULL;
-    double startTime, endTime;
+    double startTime, distributionTime, endTime;
 
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -406,25 +400,20 @@ int main(int argc, char **argv)
 
     if (rank == ROOT) {
         startTime = MPI_Wtime();
-        //printf("preparing\n");
         prepareGraphInRoot(inFile, &graph);
         preparePatternInRoot(inFile, &pattern);
-        //printf("assigning\n");
         assignNodeToProc(&graph, numOfProcs, &numOfNodesForProc);
         rewind(inFile);
-        //printf("distributing\n");
         distributeGraph(inFile, &graph, numOfNodesForProc, numOfProcs);
         free(numOfNodesForProc);
-        //printf("reading pattern\n");
         readPattern(inFile, &pattern);
-        //printf("broadcasting pattern\n");
         broadcastPattern(&pattern);
-        //printf("pattern broadcasted\n");
-        //printGraphDebug(&graph);
+        distributionTime = MPI_Wtime();
+        printf("Distribution time[s]: %.2f\n", distributionTime - startTime);
         fclose(inFile);
         receiveMatches(outFile, numOfProcs, &pattern);
         endTime = MPI_Wtime();
-        fprintf(stdout, "time[s]: %.2f\n", endTime - startTime);
+        printf("Computations time[s]: %.2f\n", endTime - distributionTime);
         fclose(outFile);
     } else {
         nodesSendingBuffer =
@@ -432,23 +421,9 @@ int main(int argc, char **argv)
         nodesReceivingBuffer =
             (int *) safeMalloc(sizeof(int) * MAX_NODE_ENCODING);
         prepareGraphInWorker(&graph);
-        //printf("%d graph prepared\n", rank);
         receiveOutEdges(rank, numOfProcs, &graph);
-        /*
-        sleep(rank);
-       //printf("%d out edges received\n", rank);
-        printGraphDebug(&graph);
-        */
         exchangeInEdges(rank, numOfProcs, &graph);
-        /*
-        sleep(rank);
-        printf("%d graph received\n", rank);
-        printGraphDebug(&graph);
-        sleep(4);
-        //*/
         receivePattern(&pattern);
-        //printf("%d pattern received\n", rank);
-        //printf("\n");
         findPatternDfsOrdering(&pattern, &patternDfsOrder, &patternDfsParents);
         findMatches(&graph, &pattern, patternDfsOrder, patternDfsParents);
         free(patternDfsOrder);
