@@ -13,7 +13,7 @@
 // Maximum node encoding size
 // Node is encoded as follows: num, outDegree, inDegree, outEdges, inEdges
 #define MAX_NODE_ENCODING 2 * MAX_NUM_OF_NODES + 3
-#define MATCH_BUFFER_SIZE 100000
+#define MATCH_BUFFER_SIZE 10000
 #define MATCHES_TAG 54
 #define FINISHED_TAG 55
 #define NODE_REQ_TAG 56
@@ -26,8 +26,8 @@
 MPI_Datatype mpiMatchType;
 // Buffers to handle received in/out edges of current node
 // Declared global to avoid unnecessary mallocs / frees
-int *receivedInEdgesBuffer;
-int *receivedOutEdgesBuffer;
+int receivedInEdgesBuffer[MAX_NUM_OF_NODES];
+int receivedOutEdgesBuffer[MAX_NUM_OF_NODES];
 
 
 // Functions declarations
@@ -193,7 +193,7 @@ void addFinishedMatch(Match *match, Match *finishedMatches, int *index)
     }
 }
 
-void tryMatchNextGraphNode(Graph* graph, Graph* pattern, Match *match,
+void tryMatchNextGraphNode(Graph *graph, Graph *pattern, Match *match,
     int *nodesMatchingOrder, int *patternParents,
     Node receivedMatchedNodes[MAX_MATCH_SIZE], int *receivedMatchedNodesInd,
     Match *finishedMatches, int *finishedMatchesInd,
@@ -395,12 +395,10 @@ int main(int argc, char **argv)
     if (rank == ROOT) {
         inFile = fopen(inFileName, "r");
         if (inFile == NULL) {
-            //MPI_Finalize(); FIXME: is necessary?
             error("Can't open input file %s\n", inFileName);
         }
         outFile = fopen(outFileName, "w");
         if (outFile == NULL) {
-            //MPI_Finalize(); TODO: is necessary?
             error("Can't open output file.\n", outFileName);
         }
     }
@@ -426,10 +424,6 @@ int main(int argc, char **argv)
         printf("Computations time[s]: %.2f\n", endTime - distributionTime);
         fclose(outFile);
     } else {
-        receivedInEdgesBuffer =
-            (int *) safeMalloc(sizeof(int) * MAX_NUM_OF_NODES);
-        receivedOutEdgesBuffer =
-            (int *) safeMalloc(sizeof(int) * MAX_NUM_OF_NODES);
         prepareGraphInWorker(&graph);
         receiveOutEdges(rank, numOfProcs, &graph);
         exchangeInEdges(rank, numOfProcs, &graph);
@@ -438,8 +432,6 @@ int main(int argc, char **argv)
         findMatches(&graph, &pattern, patternDfsOrder, patternDfsParents);
         free(patternDfsOrder);
         free(patternDfsParents);
-        free(receivedInEdgesBuffer);
-        free(receivedOutEdgesBuffer);
     }
 
     freeGraph(&graph);
