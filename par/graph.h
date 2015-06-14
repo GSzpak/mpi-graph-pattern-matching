@@ -49,6 +49,7 @@ void readReceivedNode(Node *node, int nodeNum, int *nodeBuffer,
     int *bufferActIndex);
 void reproduceNode(Node *node, int nodeNum, int *inEdgesBuffer, int inDegree,
     int *outEdgesBuffer, int outDegree);
+void copyNode(Node *dest, Node *src);
 
 
 #endif //GRAPH_H

@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <unistd.h>
 
 #include "graph.h"
 #include "utils.h"
@@ -215,4 +216,10 @@ void reproduceNode(Node *node, int nodeNum, int *inEdgesBuffer, int inDegree,
     node->inEdges = (int *) safeMalloc(sizeof(int) * inDegree);
     memcpy(node->outEdges, outEdgesBuffer, sizeof(int) * outDegree);
     memcpy(node->inEdges, inEdgesBuffer, sizeof(int) * inDegree);
+}
+
+void copyNode(Node *dest, Node *src)
+{
+    reproduceNode(dest, src->num, src->inEdges, src->inDegree,
+        src->outEdges, src->outDegree);
 }

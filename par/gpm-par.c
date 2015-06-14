@@ -3,6 +3,7 @@
 #include <string.h>
 #include <mpi.h>
 #include <assert.h>
+#include <unistd.h>
 
 #include "graph.h"
 #include "utils.h"
@@ -25,9 +26,10 @@
 // MPI datatype for Match struct
 MPI_Datatype mpiMatchType;
 // Buffers to handle received in/out edges of current node
-// Declared global to avoid unnecessary mallocs / frees
 int receivedInEdgesBuffer[MAX_NUM_OF_NODES];
 int receivedOutEdgesBuffer[MAX_NUM_OF_NODES];
+// Currently matched nodes
+Node matchedNodes[MAX_MATCH_SIZE + 1];
 
 
 // Functions declarations
@@ -36,17 +38,13 @@ void findPatternDfsOrdering(Graph *pattern, int **patternDfsOrder,
 int nodeMatches(Node *graphNode, Node *patternNode, Match* match);
 void exploreMatch(Graph* graph, Graph* pattern, Match *match,
     int *nodesMatchingOrder, int *patternParents,
-    Node receivedMatchedNodes[MAX_MATCH_SIZE], int *receivedMatchedNodesInd,
     Match *finishedMatches, int *finishedMatchesInd);
 void handleNodeRequest(MPI_Status *status, Graph *graph);
 void handlePendingRequests(Graph *graph);
 void askForNode(Graph *graph, int nodeNum, Node *nextNode);
-Node *getNextParent(Graph *graph, Match *match, int *patternParents,
-    int nextPatternNodeNum, Node receivedMatchedNodes[MAX_MATCH_SIZE]);
 void addFinishedMatch(Match *match, Match *finishedMatches, int *index);
 void tryMatchNextGraphNode(Graph* graph, Graph* pattern, Match *match,
     int *nodesMatchingOrder, int *patternParents,
-    Node receivedMatchedNodes[MAX_MATCH_SIZE], int *receivedMatchedNodesInd,
     Match *finishedMatches, int *finishedMatchesInd,
     Node *nextPatternNode, int nextGraphNodeNum);
 void findMatches(Graph *graph, Graph *pattern, int *nodesMatchingOrder,
@@ -160,28 +158,6 @@ void askForNode(Graph *graph, int nodeNum, Node *nextNode)
         receivedOutEdgesBuffer, outReceived);
 }
 
-Node *getNextParent(Graph *graph, Match *match, int *patternParents,
-    int nextPatternNodeNum, Node receivedMatchedNodes[MAX_MATCH_SIZE])
-{
-    int patternParentNum, parentInGraphNum, i;
-    Node *result;
-
-    result = NULL;
-    patternParentNum = patternParents[nextPatternNodeNum];
-    parentInGraphNum = patternNumToGraphNum(match, patternParentNum);
-
-    if (isInGraph(graph, parentInGraphNum)) {
-        return getNode(graph, parentInGraphNum);
-    } else {
-        for (i = 0; i < MAX_MATCH_SIZE; ++i) {
-            if (receivedMatchedNodes[i].num == parentInGraphNum) {
-                result = &receivedMatchedNodes[i];
-            }
-        }
-    }
-    return result;
-}
-
 void addFinishedMatch(Match *match, Match *finishedMatches, int *index)
 {
     memcpy(finishedMatches + (*index)++, match, sizeof(Match));
@@ -195,45 +171,40 @@ void addFinishedMatch(Match *match, Match *finishedMatches, int *index)
 
 void tryMatchNextGraphNode(Graph *graph, Graph *pattern, Match *match,
     int *nodesMatchingOrder, int *patternParents,
-    Node receivedMatchedNodes[MAX_MATCH_SIZE], int *receivedMatchedNodesInd,
     Match *finishedMatches, int *finishedMatchesInd,
     Node *nextPatternNode, int nextGraphNodeNum)
 {
-    int isNextInGraph;
     Node *nextGraphNode;
 
+    nextGraphNode = &matchedNodes[nextPatternNode->num];
+
     if (isInGraph(graph, nextGraphNodeNum)) {
-            // Process continues matching, if next node is in its part of graph
-            nextGraphNode = getNode(graph, nextGraphNodeNum);
-            isNextInGraph = 1;
+        // Process continues matching, if next node is in its part of graph
+        copyNode(nextGraphNode, getNode(graph, nextGraphNodeNum));
     } else {
         // Otherwise, asks for next node
-        askForNode(graph, nextGraphNodeNum,
-            receivedMatchedNodes + *receivedMatchedNodesInd);
-        nextGraphNode = &receivedMatchedNodes[(*receivedMatchedNodesInd)++];
-        isNextInGraph = 0;
+        askForNode(graph, nextGraphNodeNum, nextGraphNode);
     }
+
     if (nodeMatches(nextGraphNode, nextPatternNode, match)) {
         addNode(match, nextPatternNode->num, nextGraphNodeNum);
         exploreMatch(graph, pattern, match, nodesMatchingOrder,
-            patternParents, receivedMatchedNodes, receivedMatchedNodesInd,
-            finishedMatches, finishedMatchesInd);
+            patternParents, finishedMatches, finishedMatchesInd);
         removeNode(match, nextPatternNode->num);
     }
-    if (!isNextInGraph) {
-        freeNode(&receivedMatchedNodes[--(*receivedMatchedNodesInd)]);
-    }
+
+    freeNode(nextGraphNode);
 }
 
 void exploreMatch(Graph* graph, Graph* pattern, Match *match,
     int *nodesMatchingOrder, int *patternParents,
-    Node receivedMatchedNodes[MAX_MATCH_SIZE], int *receivedMatchedNodesInd,
     Match *finishedMatches, int *finishedMatchesInd)
 {
     Node *parentInGraph;
     Node *nextPatternNode;
     int *edgesToCheck;
-    int nextPatternNodeNum, nextGraphNodeNum, numOfEdges, visitedViaInEdge, i;
+    int nextPatternNodeNum, nextGraphNodeNum, patternParentNum, visitedViaInEdge;
+    int numOfEdges, i;
 
     handlePendingRequests(graph);
 
@@ -243,15 +214,11 @@ void exploreMatch(Graph* graph, Graph* pattern, Match *match,
     }
 
     nextPatternNodeNum = nodesMatchingOrder[match->matchedNodes];
-    if (nextPatternNodeNum < 0) {
-        nextPatternNodeNum = -nextPatternNodeNum;
-        visitedViaInEdge = 1;
-    } else {
-        visitedViaInEdge = 0;
-    }
+    visitedViaInEdge = nextPatternNodeNum < 0 ? 1 : 0;
+    nextPatternNodeNum = abs(nextPatternNodeNum);
     nextPatternNode = getNode(pattern, nextPatternNodeNum);
-    parentInGraph = getNextParent(graph, match, patternParents,
-        nextPatternNodeNum, receivedMatchedNodes);
+    patternParentNum = patternParents[nextPatternNodeNum];
+    parentInGraph = &matchedNodes[patternParentNum];
 
     // For neighbors of parent we try to match the new node depending whether
     // current node was visited by ingoing or outgoing edge in undirected dfs
@@ -266,9 +233,8 @@ void exploreMatch(Graph* graph, Graph* pattern, Match *match,
     for (i = 0; i < numOfEdges; ++i) {
         nextGraphNodeNum = edgesToCheck[i];
         tryMatchNextGraphNode(graph, pattern, match, nodesMatchingOrder,
-            patternParents, receivedMatchedNodes, receivedMatchedNodesInd,
-            finishedMatches, finishedMatchesInd, nextPatternNode,
-            nextGraphNodeNum);
+            patternParents, finishedMatches, finishedMatchesInd,
+            nextPatternNode, nextGraphNodeNum);
     }
 }
 
@@ -277,13 +243,10 @@ void findMatches(Graph *graph, Graph *pattern, int *nodesMatchingOrder,
 {
     Match m;
     MPI_Status status;
-    Node receivedMatchedNodes[MAX_MATCH_SIZE];
     Match *finishedMatches;
-    int i, terminate, receivedMatchedNodesInd, finishedMatchesInd;
+    int i, terminate, finishedMatchesInd;
 
-    receivedMatchedNodesInd = 0;
     finishedMatchesInd = 0;
-    memset(receivedMatchedNodes, 0, sizeof(receivedMatchedNodes));
     finishedMatches = safeMalloc(sizeof(Match) * MATCH_BUFFER_SIZE);
     memset(finishedMatches, 0, sizeof(Match) * MATCH_BUFFER_SIZE);
 
@@ -291,10 +254,10 @@ void findMatches(Graph *graph, Graph *pattern, int *nodesMatchingOrder,
         prepareMatch(&m);
         m.matchedNodes = 1;
         m.matches[1] = graph->nodes[i].num;
+        copyNode(&matchedNodes[1], &graph->nodes[i]);
         exploreMatch(graph, pattern, &m, nodesMatchingOrder,
-            patternParents, receivedMatchedNodes, &receivedMatchedNodesInd,
-            finishedMatches, &finishedMatchesInd);
-        assert(receivedMatchedNodesInd == 0);
+            patternParents, finishedMatches, &finishedMatchesInd);
+        freeNode(&matchedNodes[1]);
     }
 
     if (finishedMatchesInd != 0) {

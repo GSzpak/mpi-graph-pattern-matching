@@ -26,7 +26,9 @@ void countDegrees(FILE *inFile, Graph *graph)
         // In root node `num` is at index `num` in nodes array
         actNode = getNode(graph, actNodeNum);
         for (i = 0; i < actOutDeg; ++i) {
-            fgets(line, sizeof(line), inFile);
+            if ((fgets(line, sizeof(line), inFile)) == NULL) {
+                error("Error while parsing out edges.\n");
+            }
             sscanf(line, "%d\n", &actNeighbourNum);
             actNeighbour = getNode(graph, actNeighbourNum);
             actNeighbour->inDegree += 1;
@@ -38,7 +40,10 @@ void countDegrees(FILE *inFile, Graph *graph)
 void prepareGraphInRoot(FILE *inFile, Graph *graph)
 {
     int numOfNodes, node;
-    fscanf(inFile, "%d\n", &numOfNodes);
+
+    if (fscanf(inFile, "%d\n", &numOfNodes) != 1) {
+        error("Error while parsing number of nodes.\n");
+    }
     MPI_Bcast(&numOfNodes, 1, MPI_INT, ROOT, MPI_COMM_WORLD);
     prepareGraph(graph, numOfNodes, numOfNodes);
     for (node = 1; node <= graph->numOfNodes; ++node) {
@@ -53,7 +58,9 @@ void preparePatternInRoot(FILE *inFile, Graph *pattern)
     int i, numOfNodes;
     Node *actNode;
 
-    fscanf(inFile, "%d\n", &numOfNodes);
+    if (fscanf(inFile, "%d\n", &numOfNodes) != 1) {
+        error("Error while parsing number of nodes.\n");
+    }
     prepareGraph(pattern, numOfNodes, numOfNodes);
     for (i = 1; i <= pattern->numOfNodes; ++i) {
         pattern->nodeIndex[i] = i - 1;
@@ -155,7 +162,9 @@ void distributeGraph(FILE *inFile, Graph *graph, int *numOfNodesForProc,
     tempBuf = (int *) safeMalloc(sizeof(int) * (MAX_NUM_OF_NODES + 3));
     memset(tempBuf, 0, sizeof(int) * (MAX_NUM_OF_NODES + 3));
 
-    fscanf(inFile, "%d\n", &temp);
+    if (fscanf(inFile, "%d\n", &temp) != 1) {
+        error("Error while parsing number of nodes.\n");
+    }
     assert(temp == graph->numOfNodes);
 
     // Assumes, that input is encoded correctly
@@ -169,7 +178,9 @@ void distributeGraph(FILE *inFile, Graph *graph, int *numOfNodesForProc,
         tempBuf[1] = actOutDeg;
         tempBuf[2] = actNode->inDegree;
         for (i = 0; i < actOutDeg; ++i) {
-            fgets(line, sizeof(line), inFile);
+            if ((fgets(line, sizeof(line), inFile)) == NULL) {
+                error("Error while parsing out edges.\n");
+            }
             sscanf(line, "%d", &actNeighbour);
             tempBuf[i + 3] = actNeighbour;
         }
@@ -442,7 +453,9 @@ void readPattern(FILE *inFile, Graph *pattern)
     int lastInIndex[pattern->numOfNodes + 1];
     memset(lastInIndex, 0, sizeof(int) * (pattern->numOfNodes + 1));
 
-    fscanf(inFile, "%d\n", &numOfNodes);
+    if (fscanf(inFile, "%d\n", &numOfNodes) != 1) {
+        error("Error while parsing number of nodes.\n");
+    }
     assert(numOfNodes == pattern->numOfNodes);
 
     while ((fgets(line, sizeof(line), inFile) != NULL) &&
@@ -450,7 +463,9 @@ void readPattern(FILE *inFile, Graph *pattern)
         sscanf(line, "%d %d", &actNodeNum, &actOutDeg);
         actNode = getNode(pattern, actNodeNum);
         for (i = 0; i < actOutDeg; ++i) {
-            fgets(line, sizeof(line), inFile);
+            if ((fgets(line, sizeof(line), inFile)) == NULL) {
+                error("Error while parsing out edges.\n");
+            }
             sscanf(line, "%d", &actNeighbourNum);
             actNeighbour = getNode(pattern, actNeighbourNum);
             actNode->outEdges[i] = actNeighbourNum;
